@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vedant Agrawal · Radiology Projects</title>
+  <meta name="description" content="Explore Vedant Agrawal’s interactive projects on medical imaging and AI: Pneumonia Image Lab and a guided reading of the CheXNet paper.">
+  <meta name="theme-color" content="#f7f8f7">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip-link" href="#projects">Skip to projects</a>
+  <header class="topbar">
+    <a class="wordmark" href="./"><span class="logo" aria-hidden="true">VA<span>∙</span></span> Vedant Agrawal</a>
+    <a class="github-link" href="https://github.com/VedantS-Agrawal">GitHub <span aria-hidden="true">↗</span></a>
+  </header>
+  <main>
+    <section class="hero" aria-labelledby="intro-title">
+      <div class="eyebrow"><span class="dot" aria-hidden="true"></span> MEDICAL IMAGING / MACHINE LEARNING</div>
+      <h1 id="intro-title">Radiology,<br><em>explored.</em></h1>
+      <p>Interactive projects to understand how imaging models work—and how to read the evidence behind them.</p>
+      <a class="hero-link" href="#projects">Explore the projects <span aria-hidden="true">↓</span></a>
+      <div class="hero-note">Build a model. Inspect its decisions. Question the results.</div>
+    </section>
+    <section id="projects" class="projects" aria-labelledby="projects-title">
+      <div class="section-head"><h2 id="projects-title">Two ways to explore.</h2><span>Hands-on learning, in your browser</span></div>
+      <div class="project-grid">
+        <article class="project-card">
+          <a class="project-visual lab-visual" href="https://vedants-agrawal.github.io/pneumonia-image-lab/" aria-label="Open Pneumonia Image Lab">
+            <div class="xray"><img src="assets/pneumonia-sample.png" width="28" height="28" alt="A 28 by 28 pixel chest X-ray from PneumoniaMNIST"><span>28 × 28 pixels</span></div>
+            <span class="flow-arrow" aria-hidden="true">→</span>
+            <div class="feature-stack" aria-hidden="true"><i></i><i></i><i></i><span>Learned features</span></div>
+            <span class="flow-arrow" aria-hidden="true">→</span>
+            <div class="output" aria-hidden="true"><span>Model output</span><div class="score-line"></div><small>Inspect the decision</small></div>
+          </a>
+          <div class="project-body">
+            <div class="project-meta"><span>01 / BUILD & INSPECT</span><span>Live model</span></div>
+            <h3><a href="https://vedants-agrawal.github.io/pneumonia-image-lab/">Pneumonia Image Lab</a></h3>
+            <p>Follow a chest X-ray through a trained CNN. Inspect real feature maps and calculations, then explore errors and decision thresholds.</p>
+            <div class="tags"><span>PneumoniaMNIST</span><span>28 × 28</span><span>Browser inference</span></div>
+            <div class="project-actions"><a class="primary" href="https://vedants-agrawal.github.io/pneumonia-image-lab/">Explore the lab <span aria-hidden="true">↗</span></a><a class="code-link" href="https://github.com/VedantS-Agrawal/pneumonia-image-lab">View code <span aria-hidden="true">↗</span></a></div>
+          </div>
+        </article>
+        <article class="project-card">
+          <a class="project-visual paper-visual" href="https://vedants-agrawal.github.io/pneumonia-image-lab/paper/" aria-label="Open the interactive CheXNet paper guide">
+            <div class="paper-sheet" aria-hidden="true"><div class="sheet-label">READ THE EVIDENCE</div><strong>A score is only<br>half the decision.</strong><div class="mini-chart"><i></i><i></i><i></i></div><div class="mini-slider"><i></i></div><span>Compare · Adjust · Understand</span></div>
+          </a>
+          <div class="project-body">
+            <div class="project-meta"><span>02 / READ & QUESTION</span><span>Paper companion</span></div>
+            <h3><a href="https://vedants-agrawal.github.io/pneumonia-image-lab/paper/">CheXNet, explained</a></h3>
+            <p>Walk through the paper’s results and key concepts with interactive examples of focal loss, thresholds, patient splitting, and calibration.</p>
+            <div class="tags"><span>Reported results</span><span>Teaching simulations</span><span>Concept checks</span></div>
+            <div class="project-actions"><a class="primary" href="https://vedants-agrawal.github.io/pneumonia-image-lab/paper/">Explore the paper <span aria-hidden="true">↗</span></a><a class="code-link" href="https://arxiv.org/html/2505.06646v1">Source paper <span aria-hidden="true">↗</span></a></div>
+          </div>
+        </article>
+      </div>
+      <p class="scope">Educational projects about model behavior and research interpretation.</p>
+    </section>
+  </main>
+  <footer><span>Vedant Agrawal · Radiology Projects</span><span>Image: <a href="https://medmnist.com/">PneumoniaMNIST</a> · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a></span><a href="https://github.com/VedantS-Agrawal/vedants-agrawal.github.io">Homepage source <span aria-hidden="true">↗</span></a></footer>
+</body>
+</html>
