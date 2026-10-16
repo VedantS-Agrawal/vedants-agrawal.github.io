@@ -1,4 +1,4 @@
-/* Public front end: renders /, /stream/, /writing/, /stream/training/, /library/ (and /projects/), /archive/ from
+/* Public front end: renders /, /stream/, /writing/, /photos/, /tags/ (+ /tags/<tag>/), /stream/training/, /library/ (and /projects/), /archive/ from
    /site-data.json, /data/training.json and (optionally) /data/wellness.json. Hand-written SVG, no libraries. */
 (() => {
   'use strict';
@@ -17,6 +17,13 @@
   /* tags: lowercase, no leading #; entries without `tags` fall back to `topics` */
   const tagsOf = e => [...new Set((Array.isArray(e.tags) ? e.tags : Array.isArray(e.topics) ? e.topics : []).map(t => String(t).toLowerCase().replace(/^#/, '').trim()).filter(Boolean))];
   const tagBtn = (t, on, extra = '') => `<button type="button" class="tag${extra}" data-tag="${esc(t)}" data-topic="${esc(t)}" aria-pressed="${on}" aria-label="Filter by tag ${esc(t)}"><span class="h" aria-hidden="true">#</span>${esc(t)}</button>`;
+  /* tag pages exist for every tag the publisher saw (lowercase [a-z0-9-]); other tags render as plain text */
+  let shellTags = new Set();
+  const tagHref = t => `/tags/${encodeURIComponent(t)}/`;
+  const hasTagPage = t => /^[a-z0-9-]+$/.test(t) && shellTags.has(t);
+  const tagLink = (t, extra = '') => (hasTagPage(t)
+    ? `<a class="tag${extra}" href="${tagHref(t)}"><span class="h" aria-hidden="true">#</span>${esc(t)}</a>`
+    : `<span class="tag${extra}"><span class="h" aria-hidden="true">#</span>${esc(t)}</span>`);
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let uidN = 0;
   const uid = p => `${p}${++uidN}`;
@@ -248,26 +255,36 @@
   const tipEl = document.createElement('div');
   tipEl.className = 'tip'; tipEl.hidden = true; tipEl.setAttribute('role', 'presentation');
   document.body.append(tipEl);
-  const showTip = (html, x, y) => {
+  /* x/y = pointer position; `anchor` (a DOMRect) positions the tip under an element instead (keyboard focus) */
+  const showTip = (html, x, y, anchor, card = false) => {
+    tipEl.classList.toggle('day-card', card);
     tipEl.innerHTML = html; tipEl.hidden = false;
     const r = tipEl.getBoundingClientRect();
-    let left = x + 14, top = y + 16;
-    if (left + r.width > innerWidth - 8) left = x - r.width - 14;
-    if (top + r.height > innerHeight - 8) top = y - r.height - 14;
+    let left, top;
+    if (anchor) {
+      left = anchor.left + anchor.width / 2 - r.width / 2; top = anchor.bottom + 10;
+      if (top + r.height > innerHeight - 8) top = anchor.top - r.height - 10;
+    } else {
+      left = x + 14; top = y + 16;
+      if (left + r.width > innerWidth - 8) left = x - r.width - 14;
+      if (top + r.height > innerHeight - 8) top = y - r.height - 14;
+    }
+    left = Math.min(left, innerWidth - r.width - 8); top = Math.min(top, innerHeight - r.height - 8);
     tipEl.style.left = `${Math.max(8, left)}px`; tipEl.style.top = `${Math.max(8, top)}px`;
   };
   const hideTip = () => { tipEl.hidden = true; };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !tipEl.hidden) hideTip(); });
   const bindTip = c => {
     const h = e => {
       const t = e.target.closest && e.target.closest('[data-tip]');
-      if (!t || !c.contains(t)) return hideTip();
+      if (!t || !c.contains(t)) return e.target.closest && e.target.closest('[data-date]') ? undefined : hideTip(); /* day cells own their card */
       showTip(t.getAttribute('data-tip'), e.clientX, e.clientY);
     };
     c.addEventListener('pointermove', h);
     c.addEventListener('pointerdown', h);
     c.addEventListener('pointerleave', hideTip);
   };
-  document.addEventListener('pointerdown', e => { if (!e.target.closest || !e.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('pointerdown', e => { if (!e.target.closest || !e.target.closest('[data-tip], [data-date]')) hideTip(); });
   document.addEventListener('scroll', hideTip, { passive: true });
 
   /* responsive SVG: re-draws at the container's pixel width so text stays legible */
@@ -378,8 +395,8 @@
       <dl class="week"><div><dt>Time</dt><dd>${esc(fmtDur(cur.s))}<small>avg ${esc(fmtDur(avg.s))}</small></dd></div><div><dt>Distance</dt><dd>${fmtMi(cur.km)} mi<small>avg ${fmtMi(avg.km)}</small></dd></div><div><dt>Sessions</dt><dd>${cur.n}<small>avg ${nf(avg.n, 1)}</small></dd></div></dl>
       <div class="strip"><svg viewBox="0 0 ${7 * cw} ${h + 16}" role="img" aria-label="Daily training time, last 7 days: ${esc(label)}">${hatchDef(hid)}${bars}</svg><p class="cap"><span>${esc(fd(from, 'md'))} – ${esc(fd(end, 'md'))}</span><a href="/stream/training/">History →</a></p></div></section>`;
   };
-  const INTRO_NAV = [['Stream', '/stream/'], ['Writing', '/writing/'], ['Library', '/library/'], ['Training', '/stream/training/'], ['About', '/about.html']];
-  const INTRO_MORE = [['Archive', '/archive/'], ['Colophon', '/colophon.html'], ['RSS', '/index.xml']];
+  const INTRO_NAV = [['Stream', '/stream/'], ['Writing', '/writing/'], ['Library', '/library/'], ['Photos', '/photos/'], ['Training', '/stream/training/'], ['About', '/about.html']];
+  const INTRO_MORE = [['Archive', '/archive/'], ['Tags', '/tags/'], ['Colophon', '/colophon.html'], ['RSS', '/index.xml']];
   const introCard = data => {
     /* introHtml is produced by the publisher (p/a/em/strong only); the plain fallback is escaped here */
     const body = data.introHtml ? String(data.introHtml)
@@ -409,7 +426,7 @@
     const q = new URLSearchParams(location.search).get('type');
     let filter = FILTERS.some(f => f[0] === q) ? q : 'all';
     let limit = 30;
-    page(`${head('Stream', 'stream', data)}<div class="tabs" role="group" aria-label="Filter stream">${FILTERS.map(([k, l]) => `<button type="button" data-f="${k}" aria-pressed="${k === filter}">${l}</button>`).join('')}</div><div id="s-cta"></div><div id="s-list"></div>`);
+    page(`${head('Stream', null, data)}<div class="tabs" role="group" aria-label="Filter stream">${FILTERS.map(([k, l]) => `<button type="button" data-f="${k}" aria-pressed="${k === filter}">${l}</button>`).join('')}</div><div id="s-cta"></div><div id="s-list"></div>`);
     const draw = () => {
       const sel = filter === 'all' ? items : items.filter(e => filterOf(e) === filter);
       const days = groupByDay(sel);
@@ -447,7 +464,7 @@
     const index = items.map(e => [e, hay(e)]);
     let q = new URLSearchParams(location.search).get('q') || '';
     page(`${head('Writing', null, data)}${items.length ? `<div class="toolbar"><label class="filter"><span class="sr-only">Filter writing by title, tag or summary</span><input type="search" id="w-q" placeholder="Filter" autocomplete="off" spellcheck="false" value="${esc(q)}"></label><span class="count" id="w-count" aria-live="polite"></span></div>` : ''}<div id="w-list"></div>`);
-    const row = e => `<li><a class="w-title" href="${href(e)}">${esc(e.title)}</a>${tagsOf(e).length ? `<span class="topics">${tagsOf(e).map(t => tagBtn(t, false, ' sm')).join('')}</span>` : ''}<time class="w-date" datetime="${e.date}">${esc(fdE(e))}</time></li>`;
+    const row = e => `<li><a class="w-title" href="${href(e)}">${esc(e.title)}</a>${tagsOf(e).length ? `<span class="topics">${tagsOf(e).map(t => tagLink(t, ' sm')).join('')}</span>` : ''}<time class="w-date" datetime="${e.date}">${esc(fdE(e))}</time></li>`;
     const draw = () => {
       const needle = q.trim().toLowerCase();
       const list = needle ? index.filter(([, h]) => needle.split(/\s+/).every(t => h.includes(t))).map(x => x[0]) : items;
@@ -463,11 +480,6 @@
         q ? u.searchParams.set('q', q) : u.searchParams.delete('q');
         history.replaceState(null, '', u.pathname + u.search);
         draw();
-      });
-      $('#w-list').addEventListener('click', e => {
-        const b = e.target.closest('button[data-topic]');
-        if (!b) return;
-        input.value = q = b.dataset.topic; input.dispatchEvent(new Event('input')); input.focus();
       });
     }
     draw();
@@ -509,8 +521,9 @@
     const fromUrl = (new URLSearchParams(location.search).get('tags') || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
     let active = [...new Set(fromUrl.length ? fromUrl : path === '/projects' ? ['project'] : [])].filter(t => counts.has(t));
     let view = getView();
-    page(`${head('Library', 'library', data)}${items.length ? `<div class="toolbar"><div class="tagbar" role="group" aria-label="Filter library by tag">${tagList.map(([t, n]) => `<button type="button" class="tag" data-tag="${esc(t)}" aria-pressed="${active.includes(t)}"><span class="h" aria-hidden="true">#</span>${esc(t)}<span class="n">${n}</span></button>`).join('')}<button type="button" class="tag clear" id="l-clear"${active.length ? '' : ' hidden'}>clear</button></div><div class="tb-right"><span class="count" id="l-count" aria-live="polite"></span><span class="seg" role="group" aria-label="Library view"><button type="button" data-view="list" aria-pressed="${view === 'list'}">List</button><button type="button" data-view="gallery" aria-pressed="${view === 'gallery'}">Gallery</button></span></div></div>` : ''}<div id="l-shelves"></div>`);
-    const itemTags = tags => (tags.length ? `<span class="item-tags">${tags.map(t => tagBtn(t, active.includes(t), ' sm')).join('')}</span>` : '');
+    page(`${head('Library', null, data)}${items.length ? `<div class="toolbar"><div class="tagbar" role="group" aria-label="Filter library by tag">${tagList.map(([t, n]) => `<button type="button" class="tag" data-tag="${esc(t)}" aria-pressed="${active.includes(t)}"><span class="h" aria-hidden="true">#</span>${esc(t)}<span class="n">${n}</span></button>`).join('')}<button type="button" class="tag clear" id="l-clear"${active.length ? '' : ' hidden'}>clear</button><a class="tag all" href="/tags/">all tags →</a></div><div class="tb-right"><span class="count" id="l-count" aria-live="polite"></span><span class="seg" role="group" aria-label="Library view"><button type="button" data-view="list" aria-pressed="${view === 'list'}">List</button><button type="button" data-view="gallery" aria-pressed="${view === 'gallery'}">Gallery</button></span></div></div>` : ''}<div id="l-shelves"></div>`);
+    /* the tag filters in place; the small arrow opens the tag's own page */
+    const itemTags = tags => (tags.length ? `<span class="item-tags">${tags.map(t => `<span class="tg">${tagBtn(t, active.includes(t), ' sm')}${hasTagPage(t) ? `<a class="go" href="${tagHref(t)}" aria-label="All entries tagged ${esc(t)}" title="All entries tagged #${esc(t)}">→</a>` : ''}</span>`).join('')}</span>` : '');
     const ext = e => (e.project_url ? `<a class="ext" href="${safeUrl(e.project_url)}" aria-label="Open ${esc(e.title)} (external site)">↗</a>` : '');
     const row = ({ e, tags }) => {
       if (e.type === 'project') {
@@ -576,6 +589,99 @@
     draw();
   };
 
+
+  /* ================================================================
+     Tags: /tags/ (index) and /tags/<tag>/ (everything carrying the tag, by kind)
+  ================================================================ */
+  const TAG_KINDS = [
+    ['Writing', e => WRITING.has(e.type)],
+    ['Library', e => e.type === 'literature' || e.type === 'project'],
+    ['Photos', e => e.type === 'photo'],
+  ];
+  const taggable = entries => entries.filter(e => TAG_KINDS.some(([, f]) => f(e)));
+  const renderTags = (data, entries) => {
+    setTitle('Tags');
+    const counts = new Map();
+    taggable(entries).forEach(e => tagsOf(e).forEach(t => counts.set(t, (counts.get(t) || 0) + 1)));
+    const list = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    page(`${head('Tags', null, data)}${list.length
+      ? `<ul class="tag-index" aria-label="All tags">${list.map(([t, n]) => `<li>${tagLink(t)}<span class="n"><span class="sr-only">, </span>${n}<span class="sr-only"> ${n === 1 ? 'entry' : 'entries'}</span></span></li>`).join('')}</ul>`
+      : emptyState('No tags yet.')}`);
+  };
+  const renderTag = (data, entries, tag) => {
+    setTitle(`#${tag}`);
+    const crumb = '<a class="crumb" href="/tags/">← tags</a>';
+    const mine = taggable(entries).filter(e => tagsOf(e).includes(tag)).sort(byDateDesc);
+    const row = e => {
+      const sub = e.type === 'literature' ? [e.creator, STATUS_LABEL[e.consumption_status]].filter(Boolean).join(' · ') : '';
+      return `<li><a class="w-title" href="${href(e)}">${esc(e.title)}</a><time class="w-date" datetime="${e.date}">${esc(fdE(e))}</time>${sub ? `<p class="t-sub">${esc(sub)}</p>` : ''}${e.summary ? `<p class="t-sum">${esc(e.summary)}</p>` : ''}</li>`;
+    };
+    const sections = TAG_KINDS.map(([label, f], i) => {
+      const here = mine.filter(f);
+      return here.length ? `<section class="tag-sec" aria-labelledby="tk${i}"><h2 id="tk${i}">${label}<span>${here.length}</span></h2><ul class="t-rows">${here.map(row).join('')}</ul></section>` : '';
+    }).join('');
+    page(`${head(`#${tag}`, null, data, crumb)}${sections || emptyState(`Nothing is tagged #${tag}.`)}`);
+  };
+
+  /* ================================================================
+     Photos: masonry gallery + native <dialog> lightbox
+  ================================================================ */
+  const renderPhotos = (data, entries) => {
+    setTitle('Photos');
+    const shots = entries.filter(e => e.type === 'photo').sort(byDateDesc).flatMap(e => {
+      const imgs = e.images && e.images.length ? e.images : e.image ? [e.image] : [];
+      return imgs.map((src, i) => ({ e, src: safeUrl(src), i, n: imgs.length }));
+    });
+    if (!shots.length) { page(`${head('Photos', null, data)}${emptyState('No photos yet.')}`, true); return; }
+    const label = s => `${s.e.title}${s.n > 1 ? ` (${s.i + 1} of ${s.n})` : ''}`;
+    const fig = (s, k) => `<li><button type="button" class="shot" data-k="${k}" aria-label="${esc(`View ${label(s)}, ${fdE(s.e)}`)}" aria-haspopup="dialog"><img src="${s.src}" alt="" loading="lazy" decoding="async"><span class="shot-cap" aria-hidden="true"><span>${esc(s.e.title)}</span><time>${esc(fdE(s.e))}</time></span></button></li>`;
+    page(`${head('Photos', null, data)}<ul class="photo-grid" id="p-grid">${shots.map(fig).join('')}</ul>
+      <dialog class="lightbox" id="lb" aria-label="Photo viewer">
+        <div class="lb-top"><span class="lb-count" id="lb-count" aria-live="polite"></span><button type="button" class="lb-btn" id="lb-close">Close</button></div>
+        <div class="lb-stage" id="lb-stage"><img id="lb-img" alt="">${shots.length > 1 ? '<button type="button" class="lb-nav prev" id="lb-prev" aria-label="Previous photo">←</button><button type="button" class="lb-nav next" id="lb-next" aria-label="Next photo">→</button>' : ''}</div>
+        <div class="lb-cap"><p class="lb-t"><span id="lb-title"></span><time id="lb-date"></time></p><p class="lb-sum" id="lb-sum"></p><a class="link" id="lb-link" href="#">Open note →</a></div>
+      </dialog>`, true);
+    const dlg = $('#lb'), img = $('#lb-img');
+    let cur = 0, opener = null;
+    const show = k => {
+      cur = (k + shots.length) % shots.length;
+      const s = shots[cur];
+      img.src = s.src; img.alt = label(s);
+      $('#lb-title').textContent = s.e.title; $('#lb-date').textContent = fdE(s.e); $('#lb-date').setAttribute('datetime', s.e.date);
+      $('#lb-sum').textContent = s.e.summary || ''; $('#lb-sum').hidden = !s.e.summary;
+      $('#lb-link').href = href(s.e);
+      $('#lb-count').textContent = `${cur + 1} / ${shots.length}`;
+      [cur - 1, cur + 1].forEach(j => { if (shots.length > 1) new Image().src = shots[(j + shots.length) % shots.length].src; });
+    };
+    $('#p-grid').addEventListener('click', e => {
+      const b = e.target.closest('.shot');
+      if (!b) return;
+      opener = b;
+      show(+b.dataset.k);
+      dlg.showModal();
+      $('#lb-close').focus({ preventScroll: true });
+    });
+    /* a cover that fails to load is dropped rather than leaving an empty frame */
+    $('#p-grid').addEventListener('error', ev => { const li = ev.target && ev.target.closest && ev.target.closest('li'); if (li && ev.target.tagName === 'IMG') li.remove(); }, true);
+    $('#lb-close').addEventListener('click', () => dlg.close());
+    dlg.addEventListener('close', () => { if (opener && opener.isConnected) opener.focus({ preventScroll: true }); });
+    const prev = $('#lb-prev'), next = $('#lb-next');
+    prev && prev.addEventListener('click', () => show(cur - 1));
+    next && next.addEventListener('click', () => show(cur + 1));
+    dlg.addEventListener('keydown', e => {
+      if (shots.length < 2 || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); show(cur - 1); } else if (e.key === 'ArrowRight') { e.preventDefault(); show(cur + 1); }
+    });
+    /* clicking the empty area around the picture closes the viewer */
+    dlg.addEventListener('click', e => { if (e.target === dlg || e.target.id === 'lb-stage') dlg.close(); });
+    let sx = null;
+    $('#lb-stage').addEventListener('pointerdown', e => { sx = e.pointerType === 'mouse' ? null : e.clientX; });
+    $('#lb-stage').addEventListener('pointerup', e => {
+      if (sx == null || shots.length < 2) return;
+      const dx = e.clientX - sx; sx = null;
+      if (Math.abs(dx) > 50) show(cur + (dx < 0 ? 1 : -1));
+    });
+  };
 
   /* ================================================================
      Archive
@@ -722,14 +828,59 @@
       <section class="t-section" aria-labelledby="t-mo"><header><h2 id="t-mo">Monthly totals</h2></header><div id="months"></div></section>
       <section class="t-section" id="activities" aria-labelledby="t-list"><header><h2 id="t-list">Activities</h2><p class="cap" id="list-count" aria-live="polite"></p></header><div id="act-list"></div></section>`, true);
 
-    /* ---------- tooltips for a day ---------- */
+    /* ---------- day card: date, that day's sessions and wellness (hover, focus, tap) ---------- */
     let ribMap = new Map();
-    const dayTip = d => {
-      const o = ribMap.get(d);
-      if (o) return { html: `<b>${esc(fd(d, 'day'))}</b><br>${esc(fmtDur(o.s))} · ${o.n} ${o.n === 1 ? 'session' : 'sessions'}`, text: `${fd(d, 'day')}: ${fmtDur(o.s)}, ${o.n} sessions` };
-      if (!inCoverage(cov, d)) return { html: `<b>${esc(fd(d, 'day'))}</b><br>Not synced`, text: `${fd(d, 'day')}: not synced` };
-      return { html: `<b>${esc(fd(d, 'day'))}</b><br>No training`, text: `${fd(d, 'day')}: no training` };
+    const allDays = dayMap(acts);
+    const clock = a => (a.start ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(a.start * 1000)) : '');
+    const sessionsOf = d => (allDays.get(d) ? allDays.get(d).acts.slice().sort((a, b) => a.start - b.start) : []);
+    const wellRows = w => {
+      if (!w) return [];
+      const r = [];
+      if (w.sleepS != null) r.push(['Sleep', fmtSleep(w.sleepS)]);
+      if (w.hrv != null) r.push(['HRV', `${nf(w.hrv, 0)}${w.hrvLow != null && w.hrvHigh != null ? ` (normal ${nf(w.hrvLow, 0)}–${nf(w.hrvHigh, 0)})` : ''}`]);
+      if (w.restingHr != null) r.push(['Resting HR', nf(w.restingHr, 0)]);
+      if (w.acuteLoad != null || w.chronicLoad != null) r.push(['Load', `${w.acuteLoad != null ? nf(w.acuteLoad, 0) : '–'} acute / ${w.chronicLoad != null ? nf(w.chronicLoad, 0) : '–'} chronic`]);
+      return r;
     };
+    const dayCardHtml = d => {
+      const ss = sessionsOf(d), wr = wellRows(well && well.map.get(d));
+      const body = ss.length
+        ? `<ul class="dc-s">${ss.map(a => `<li><span>${esc(actName(a))}${clock(a) ? ` <span class="dc-t">${esc(clock(a))}</span>` : ''}</span><span class="dc-m">${esc([a.distanceKm > 0 ? distStr(a.group, a.distanceKm) : '', a.durationS ? fmtDur(a.durationS) : ''].filter(Boolean).join(' · '))}</span></li>`).join('')}</ul>`
+        : `<p class="dc-n">${inCoverage(cov, d) ? 'No training' : 'Not synced'}</p>`;
+      return `<b>${esc(fd(d, 'day'))}</b><span class="dc-y">${esc(d.slice(0, 4))}</span>${body}${wr.length ? `<dl class="dc-w">${wr.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}`;
+    };
+    /* plain-text version for the screen-reader live region */
+    const dayTip = d => {
+      const ss = sessionsOf(d), wr = wellRows(well && well.map.get(d));
+      const parts = ss.length ? [ss.map(a => [actName(a), clock(a), a.distanceKm > 0 ? distStr(a.group, a.distanceKm) : '', a.durationS ? fmtDur(a.durationS) : ''].filter(Boolean).join(' ')).join('; ')] : [inCoverage(cov, d) ? 'no training' : 'not synced'];
+      if (wr.length) parts.push(wr.map(([k, v]) => `${k} ${v}`).join(', '));
+      return { text: `${fd(d, 'day')}: ${parts.join('. ')}` };
+    };
+    let cardDate = '', tapGuard = '';
+    const showCard = (d, x, y, anchor) => { cardDate = d; showTip(dayCardHtml(d), x, y, anchor, true); };
+    const hideCard = () => { cardDate = ''; tapGuard = ''; hideTip(); };
+    const cellOf = e => { const t = e.target.closest && e.target.closest('[data-date]'); return t && t.dataset.date ? t : null; };
+    /* mouse: follows the pointer. touch/pen: the first tap on a day shows the card and swallows the click; a second tap acts as before. */
+    const bindCard = c => {
+      c.addEventListener('pointermove', e => {
+        if (e.pointerType !== 'mouse') return;
+        const t = cellOf(e);
+        t ? showCard(t.dataset.date, e.clientX, e.clientY) : hideCard();
+      });
+      c.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hideCard(); });
+      c.addEventListener('pointerdown', e => {
+        if (e.pointerType === 'mouse') return;
+        const t = cellOf(e);
+        if (!t) return hideCard();
+        const d = t.dataset.date;
+        if (cardDate === d && !tipEl.hidden) { tapGuard = ''; return; }
+        tapGuard = d; showCard(d, e.clientX, e.clientY);
+      });
+      c.addEventListener('click', e => { if (tapGuard && cellOf(e)) { tapGuard = ''; e.stopImmediatePropagation(); } });
+      c.addEventListener('scroll', () => { if (!kb) hideCard(); }, { passive: true });
+    };
+    document.addEventListener('pointerdown', e => { if (!tipEl.hidden && cardDate && !(e.target.closest && e.target.closest('[data-date]'))) hideCard(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCard(); });
 
     /* ---------- 1. Year ribbon ---------- */
     let kb = '';
@@ -758,8 +909,7 @@
           const o = ribMap.get(d), x = labelW + i * cw;
           if (!o && !inCoverage(cov, d)) { if (run < 0) run = i; continue; }
           flush(i);
-          const tip = dayTip(d);
-          s += `<rect class="day${o ? ' has' : ''}" x="${x}" y="${yy}" width="${Math.max(1, cw - .8)}" height="${cellH}" rx="1" fill="${o ? rampColor(o.s / 60) : COL.empty}" data-date="${d}" data-tip="${esc(tip.html)}"/>`;
+          s += `<rect class="day${o ? ' has' : ''}" x="${x}" y="${yy}" width="${Math.max(1, cw - .8)}" height="${cellH}" rx="1" fill="${o ? rampColor(o.s / 60) : COL.empty}" data-date="${d}"/>`;
           if (S.range && S.range.from === d && S.range.to === d) selRect = `<rect class="sel" x="${x - 1}" y="${yy - 1}" width="${Math.max(1, cw - .8) + 2}" height="${cellH + 2}"/>`;
           if (kb === d) kbRect = `<rect class="focus" x="${x - 1.5}" y="${yy - 1.5}" width="${Math.max(1, cw - .8) + 3}" height="${cellH + 3}"/>`;
         }
@@ -800,8 +950,7 @@
           const x = left + (idx(d) + .5) * slot + (k - (list.length - 1) / 2) * (sw + .4);
           const yTop = Math.min(y(a.durationS / 3600), top + plotH - 3);
           lines += `<line x1="${x.toFixed(2)}" x2="${x.toFixed(2)}" y1="${top + plotH}" y2="${yTop.toFixed(1)}" stroke="${st.c}" stroke-opacity="${st.o}" stroke-width="${sw.toFixed(2)}"${st.d ? ` stroke-dasharray="${st.d}"` : ''}/>`;
-          const tip = `<b>${esc(a.title || a.sport)}</b><br>${esc(fd(a.date, 'day'))}<br>${esc(fmtDur(a.durationS))}${a.distanceKm ? ` · ${esc(distStr(a.group, a.distanceKm))}` : ''}`;
-          hits += `<line class="s-hit" data-date="${d}" x1="${x.toFixed(2)}" x2="${x.toFixed(2)}" y1="${top + plotH}" y2="${top}" stroke="transparent" stroke-width="${Math.max(5, sw + 3)}" data-tip="${esc(tip)}"/>`;
+          hits += `<line class="s-hit" data-date="${d}" x1="${x.toFixed(2)}" x2="${x.toFixed(2)}" y1="${top + plotH}" y2="${top}" stroke="transparent" stroke-width="${Math.max(5, sw + 3)}"/>`;
         });
       });
       return `${s}${lines}${hits}</svg>`;
@@ -1025,6 +1174,7 @@
     const runRecHrv = well ? mount($('#rec-hrv'), drawTrend('hrv')) : () => {};
     const runRecRhr = well ? mount($('#rec-rhr'), drawTrend('rhr')) : () => {};
     [$('#ribbon'), $('#weekly'), $('#yoy'), $('#season'), $('#rec-hrv'), $('#rec-rhr')].filter(Boolean).forEach(bindTip);
+    bindCard($('#ribbon')); bindCard($('#season'));
     $('#season').addEventListener('click', e => {
       const h = e.target.closest('.s-hit');
       if (!h) return;
@@ -1049,11 +1199,11 @@
       const u = new URL(location.href);
       if (from && from === to) u.searchParams.set('date', from); else u.searchParams.delete('date');
       history.replaceState(null, '', u.pathname + u.search + (from ? '#activities' : ''));
-      runRibbon(); drawList();
+      hideCard(); runRibbon(); drawList();
       if (from) $('#activities').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
     };
     const refresh = () => {
-      caps(); runSeason(); drawSeasonText(); runRecHrv(); runRecRhr(); runRibbon(); runWeekly(); runYoy(); drawMix(); drawMonths(); drawList();
+      hideCard(); caps(); runSeason(); drawSeasonText(); runRecHrv(); runRecRhr(); runRibbon(); runWeekly(); runYoy(); drawMix(); drawMonths(); drawList();
       $$('#year-chips button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.y === S.year)));
       $$('#metric-seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.metric === S.metric)));
       $$('#group-chips button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.g === S.group)));
@@ -1085,8 +1235,10 @@
       $('#rib-live').textContent = dayTip(kb).text;
       const cw = (Math.max(rib.clientWidth, 760) - 40) / 366, cx = 38 + (doy(kb) - 1) * cw;
       if (cx < rib.scrollLeft + 40) rib.scrollLeft = cx - 60; else if (cx > rib.scrollLeft + rib.clientWidth - 40) rib.scrollLeft = cx - rib.clientWidth + 60;
+      const cell = rib.querySelector(`rect.day[data-date="${kb}"]`);
+      if (cell) showCard(kb, 0, 0, cell.getBoundingClientRect());
     });
-    rib.addEventListener('blur', () => { if (kb) { kb = ''; runRibbon(); } });
+    rib.addEventListener('blur', () => { hideCard(); if (kb) { kb = ''; runRibbon(); } });
     $('#weekly').addEventListener('click', e => {
       const h = e.target.closest('rect.hit');
       if (!h) return;
@@ -1119,12 +1271,16 @@
       const r = await fetch('/site-data.json', { cache: 'no-cache' });
       if (!r.ok) throw new Error(`Site data unavailable (${r.status})`);
       const data = await r.json(), entries = cleanEntries(data);
+      shellTags = new Set((Array.isArray(data.entries) ? data.entries : []).flatMap(e => (Array.isArray(e && e.tags) ? e.tags : [])).map(t => String(t).toLowerCase().replace(/^#/, '').trim()));
       if (path === '/') await renderHome(data, entries);
       else if (path === '/stream') await renderStream(data, entries);
       else if (path === '/writing') renderWriting(data, entries);
       else if (path === '/stream/training') await renderTraining(data, entries);
       else if (path === '/library') renderLibrary(data, entries);
       else if (path === '/projects') renderLibrary(data, entries);
+      else if (path === '/photos') renderPhotos(data, entries);
+      else if (path === '/tags') renderTags(data, entries);
+      else if (/^\/tags\/[^/]+$/.test(path)) renderTag(data, entries, path.slice(6).toLowerCase());
       else if (path === '/archive' || /^\/archive\/\d{4}-\d{2}$/.test(path)) await renderArchive(data, entries);
       else page('<div class="error-state"><h1 class="h-display">Not found</h1><p><a href="/">Home →</a></p></div>');
     } catch (err) {

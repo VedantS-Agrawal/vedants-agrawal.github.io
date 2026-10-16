@@ -183,3 +183,22 @@ Every field optional. In the stream and on the homepage each day's training grou
 ## 9. No projects
 
 There is no project type. Work like the radiology tools lives as ordinary notes (e.g. `Notes/Radiology/`, `type: writing`, `visibility: public`). Their original `/projects/<slug>` addresses are kept via `_System/publishing.json`; `/projects/` redirects to Writing.
+
+## 10. Links, tags, photos (interactive layer)
+
+`/data/links.json` (publisher):
+
+```jsonc
+{
+  "nodes": [ { "url": "/notes/x", "title": "…", "type": "evergreen" } ],      // every public non-activity entry
+  "edges": [ ["/notes/x", "/library/y"] ],                                     // from → to, public targets only
+  "backlinks": { "/library/y": [ { "url": "/notes/x", "title": "…", "type": "…",
+                                   "context": "…sentence with ⁣linked words⁤ marked…" } ] }
+}
+```
+
+`context` is plain text; U+2063 … U+2064 wrap the words that were the link (render them highlighted). Entry `url`s have no `.html`; pages live at `url + '.html'`.
+
+New app-shell routes: `/photos/` (gallery of `type: photo` entries; each has `images: ["/media/…webp"]`, `summary`, `date`) and `/tags/` + `/tags/<tag>/` (one shell per tag in use).
+
+Auto-publish: the scheduled run publishes when COROS changed **or** any public note is ready/changed — so a photo note made on the phone goes live on the next run.

@@ -1,6 +1,6 @@
 """One scheduled laptop run: COROS sync, then publish if anything public changed."""
 import fcntl, sys
-from common import LOCAL, now
+from common import LOCAL, now, read_json
 import coros_sync, dates, publisher
 
 def run():
@@ -13,9 +13,13 @@ def run():
         if not (LOCAL / 'auto-publish-enabled').exists():
             publisher.export()
             return f'{changed} changed activities; automatic publishing is off'
-        if not changed: return '0 changed activities'
+        # Publish when COROS brought something new OR a public note was added/edited (e.g. from the phone).
+        publisher.export()
+        report = read_json(publisher.REPORT)
+        notes_changed = len(report.get('ready', [])) + len(report.get('changed', []))
+        if not changed and not notes_changed: return '0 changed activities, no note changes'
         result = publisher.publish()
-        return f'{changed} changed activities; published {result["entries"]} entries, {len(result["held"])} held back'
+        return f'{changed} changed activities, {notes_changed} notes; published {result["entries"]} entries, {len(result["held"])} held back'
 
 if __name__ == '__main__':
     try: print(now(), run(), flush=True)

@@ -1,8 +1,6 @@
 ---
 title: Home
 type: home
-stream_description: "[Stream description]"
-library_description: "[Library description]"
 archive_description: "[Archive description]"
 training_description: "[Training history description]"
 ---

@@ -294,6 +294,7 @@ class Exporter:
                     'activities': sorted(self.training, key=lambda a: (a.get('date', ''), a.get('start') or 0), reverse=True)}
         (self.stage / 'data').mkdir(exist_ok=True)
         (self.stage / 'data/training.json').write_text(json.dumps(training, separators=(',', ':'), default=str))
+        (self.stage / 'data/links.json').write_text(json.dumps(links_of(output), separators=(',', ':'), ensure_ascii=False))
         write_note(self.stage / 'index.md', {'title': CONFIG['name']}, '')
         digest = hashlib.sha256(json.dumps(entries, sort_keys=True, default=str).encode()).hexdigest()
         write_json(LOCAL / 'pending-publication.json', {'notes': proposal, 'digest': digest}, True)
@@ -324,6 +325,34 @@ def tags_of(n):
     return out
 
 
+def links_of(output):
+    """Graph + backlinks for the front end: nodes, edges, and for each page the notes linking to it with the sentence around the link."""
+    by_url = {e['url']: e for e in output}
+    nodes = [{'url': e['url'], 'title': e['title'], 'type': e['type']} for e in output if e['type'] != 'activity']
+    edges, back = set(), {}
+    link = re.compile(r'(?<!!)\[([^\]]*)\]\((/[a-z0-9/-]+)(?:#[^)]*)?\)')
+    for e in output:
+        if e['type'] == 'activity': continue
+        # paragraphs, and each list item on its own, so a snippet never runs across bullets
+        for para in re.split(r'\n\s*\n|\n(?=\s*(?:[-*+]|\d+\.)\s)', e['_body']):
+            for m in link.finditer(para):
+                to = m.group(2)
+                if to not in by_url or to == e['url'] or by_url[to]['type'] == 'activity': continue
+                edges.add((e['url'], to))
+                # the sentence holding the link, with Markdown stripped and the link text marked
+                start = max(para.rfind('. ', 0, m.start()) + 2, 0) if '. ' in para[:m.start()] else 0
+                end = para.find('. ', m.end()); end = len(para) if end < 0 else end + 1
+                ctx = para[start:end]
+                ctx = link.sub(lambda k: '\u2063' + k.group(1) + '\u2064' if k.start() == m.start() - start else k.group(1), ctx)
+                ctx = re.sub(r'<[^>]+>|[*_`#>]|^\s*[-+] ', '', re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', ctx)).strip()
+                if len(ctx) > 240:
+                    i = ctx.find('\u2063'); ctx = ('… ' if i > 120 else '') + ctx[max(0, i - 120):i + 120].strip() + ' …'
+                back.setdefault(to, [])
+                if not any(b['url'] == e['url'] for b in back[to]):
+                    back[to].append({'url': e['url'], 'title': e['title'], 'type': e['type'], 'context': ctx})
+    return {'nodes': nodes, 'edges': sorted(edges), 'backlinks': back}
+
+
 def write_status_note(held, status, sync):
     """A phone-readable summary in the vault. Overwritten on every build."""
     s = state()
@@ -341,7 +370,7 @@ def export():
     return Exporter().run()
 
 
-SHELLS = [('stream', 'Stream'), ('writing', 'Writing'), ('library', 'Library'), ('archive', 'Archive'), ('stream/training', 'Training history')]
+SHELLS = [('stream', 'Stream'), ('writing', 'Writing'), ('photos', 'Photos'), ('tags', 'Tags'), ('library', 'Library'), ('archive', 'Archive'), ('stream/training', 'Training history')]
 
 
 def finish():
@@ -355,6 +384,8 @@ def finish():
         folder.mkdir(parents=True, exist_ok=True)
         (folder / 'index.html').write_text(shell.replace('<title>Vedant Agrawal</title>', f'<title>{title} · Vedant Agrawal</title>'))
     for path, title in SHELLS: page(dest / path, title)
+    for tag in sorted({t for e in read_json(dest / 'site-data.json').get('entries', []) for t in e.get('tags', [])}):
+        if re.fullmatch(r'[a-z0-9-]+', tag): page(dest / 'tags' / tag, f'#{tag}')
     data = read_json(dest / 'site-data.json')
     for month in sorted({e['date'][:7] for e in data['entries'] if re.fullmatch(r'\d{4}-\d{2}', e['date'][:7])}):
         page(dest / 'archive' / month, month)
