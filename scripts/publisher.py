@@ -8,6 +8,7 @@ import argparse, hashlib, html, json, re, shutil, subprocess, sys
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from common import *
+import dates
 
 PUBLIC_TYPES = ('activity', 'block', 'month')
 SKIP_FOLDERS = ('_System/', 'Templates/', 'Guide/')
@@ -192,13 +193,17 @@ class Exporter:
         body = re.sub(r'%%.*?%%', '', n['body'], flags=re.S)
         body = self.rewrite(n, body)
         stamp = now(); digest = fingerprint(n)
-        pub = old.get('published') or stamp
-        updated = old.get('updated') if old.get('hash') == digest and old.get('updated') else stamp
-        started = m.get('created') if kind not in ('project', 'page') else None
-        occurred = str(m.get('date') or started or '')[:10]
-        if kind == 'month' and re.match(r'\d{4}-\d{2}', n['title']): occurred = n['title'][:7] + '-01'
-        date = occurred if re.fullmatch(r'\d{4}-\d{2}-\d{2}', occurred) else pub[:10]
+        # published: your `published:` property wins; otherwise the first successful publish.
+        pub = day_of(m.get('published'))[0] or old.get('published') or stamp
+        updated = day_of(m.get('updated'))[0] or (old.get('updated') if old.get('hash') == digest and old.get('updated') else stamp)
+        # The date a note sits at on the site: explicit `date`, a finished book's `finished`, else when it was started (`created`).
+        candidates_ = [m.get('date')]
+        if kind == 'literature' and m.get('consumption_status') == 'finished': candidates_.append(m.get('finished'))
+        if kind not in ('page',): candidates_.append(m.get('created'))
+        if kind == 'month' and re.match(r'\d{4}-\d{2}', n['title']): candidates_ = [n['title'][:7]]
+        date, precision = next((day_of(c) for c in candidates_ if day_of(c)[0]), (pub[:10], 'day'))
         record = {'type': kind, 'title': n['title'], 'url': '/' + r, 'date': date, 'published': pub, 'updated': updated,
+                  **({'datePrecision': precision} if precision != 'day' else {}),
                   '_body': body, '_path': n['path']}
         for key in ENTRY_KEYS:
             if m.get(key) not in (None, '', []): record[key] = m[key] if not hasattr(m[key], 'isoformat') else str(m[key])
@@ -216,6 +221,7 @@ class Exporter:
         record['search'] = text[:5000]
         record['words'] = len(re.findall(r'\w+', text))
         record['tags'] = tags_of(n)
+        if str(m.get('pinned', '')).lower() in ('true', 'yes', '1'): record['pinned'] = True
         images = re.findall(r'!\[[^\]]*\]\((/media/[^)]+\.webp)\)', body)
         if images: record['image'] = images[0]
         if kind == 'photo': record['images'] = images
@@ -298,6 +304,15 @@ class Exporter:
         shutil.move(str(self.stage), ROOT / 'content')
 
 
+def day_of(value):
+    """'2026-02-14' → ('2026-02-14', 'day'); '2026-02' → ('2026-02-01', 'month'); '2026' → ('2026-01-01', 'year')."""
+    v = str(value or '').strip().strip('"')[:10]
+    if re.fullmatch(r'\d{4}-\d{2}-\d{2}', v): return v, 'day'
+    if re.fullmatch(r'\d{4}-\d{2}', v): return v + '-01', 'month'
+    if re.fullmatch(r'\d{4}', v): return v + '-01-01', 'year'
+    return None, None
+
+
 def tags_of(n):
     """Tags come only from the YAML `tags` property (legacy `topics` accepted)."""
     out = []
@@ -346,7 +361,7 @@ def finish():
     for p in dest.rglob('*.html'):
         text = p.read_text()
         if 'id="app"' in text or '/article.js' in text: continue
-        p.write_text(text.replace('</head>', '<link rel="stylesheet" href="/site.css"><link rel="stylesheet" href="/palette.css"><script defer src="/article.js"></script><script defer src="/palette.js"></script></head>'))
+        p.write_text(text.replace('</head>', '<link rel="stylesheet" href="/site.css"><link rel="stylesheet" href="/palette.css"><script defer src="/article.js"></script><script defer src="/palette.js"></script><script defer src="/pins.js"></script></head>'))
     (dest / 'projects').mkdir(exist_ok=True)
     shutil.copy2(ROOT / 'web/projects-redirect.html', dest / 'projects/index.html')  # old /projects/ index → Writing
     (dest / 'projects-redirect.html').unlink(missing_ok=True)
@@ -354,6 +369,7 @@ def finish():
 
 
 def build():
+    dates.stamp()          # fill created / refresh updated in the vault first
     result = export()
     subprocess.run(['node', 'quartz/bootstrap-cli.mjs', 'build', '-d', 'content', '-o', 'dist', '--concurrency', '2'], cwd=ROOT, check=True,
                    stdout=subprocess.DEVNULL)
@@ -377,7 +393,11 @@ def finalize():
     current = read_json(ROOT / 'content/site-data.json')
     digest = hashlib.sha256(json.dumps(current.get('entries', []), sort_keys=True, default=str).encode()).hexdigest()
     if digest != pending['digest']: raise ValueError('The publication changed after preview; build again')
-    s = state(); s['notes'].update(pending['notes']); s['lastPublished'] = now(); save_state(s)
+    s = state()
+    for path, entry in pending['notes'].items():
+        if not s['notes'].get(path, {}).get('published') and not path.startswith('Training/Activities/'):
+            dates.set_property(vault() / path, 'published', entry['published'][:10])   # visible + editable in Obsidian
+    s['notes'].update(pending['notes']); s['lastPublished'] = now(); save_state(s)
     (LOCAL / 'auto-publish-enabled').touch()  # scheduled runs may publish once the site has gone live by hand
 
 

@@ -72,7 +72,14 @@
     const pub = day(entry.published) || day(entry.date);
     const upd = day(entry.updated);
     const facts = [];
-    if (!isPage && pub) facts.push(`<span>published <time datetime="${esc(pub)}">${esc(shortDate(pub))}</time></span>`);
+    // Lead with when it happened: started (notes), finished (books), the day (reflections, workouts).
+    const when = day(entry.date);
+    const whenText = !when ? '' : entry.datePrecision === 'month' ? new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(parseDay(when))
+      : entry.datePrecision === 'year' ? when.slice(0, 4) : shortDate(when);
+    const whenLabel = entry.type === 'literature' && entry.consumption_status === 'finished' ? 'finished'
+      : ['reflection', 'activity', 'photo', 'daily'].includes(entry.type) ? '' : 'started';
+    if (!isPage && when) facts.push(`<span>${whenLabel ? whenLabel + ' ' : ''}<time datetime="${esc(when)}">${esc(whenText)}</time></span>`);
+    if (!isPage && pub && pub !== when) facts.push(`<span class="faint">published <time datetime="${esc(pub)}">${esc(shortDate(pub))}</time></span>`);
     if (upd && (isPage || upd !== pub)) facts.push(`<span>updated <time datetime="${esc(upd)}">${esc(shortDate(upd))}</time></span>`);
     const words = Number(entry.words);
     if (!isPage && entry.type !== 'activity' && Number.isFinite(words) && words > 0) facts.push(`<span>${Math.max(1, Math.round(words / 230))} min read</span>`);

@@ -1,7 +1,7 @@
 """One scheduled laptop run: COROS sync, then publish if anything public changed."""
 import fcntl, sys
 from common import LOCAL, now
-import coros_sync, publisher
+import coros_sync, dates, publisher
 
 def run():
     LOCAL.mkdir(parents=True, exist_ok=True)
@@ -9,6 +9,7 @@ def run():
         try: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError: return 'Another sync is already running'
         changed = coros_sync.sync()
+        dates.stamp()
         if not (LOCAL / 'auto-publish-enabled').exists():
             publisher.export()
             return f'{changed} changed activities; automatic publishing is off'

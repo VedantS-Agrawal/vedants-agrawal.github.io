@@ -25,7 +25,9 @@
     "test:site": "bash scripts/runtime.sh -m unittest discover -s tests -p test_*.py",
     "sync": "bash scripts/runtime.sh scripts/auto_sync.py",
     "publish": "bash scripts/runtime.sh scripts/publisher.py publish",
-    "schedule": "bash scripts/schedule.sh"
+    "schedule": "bash scripts/schedule.sh",
+    "words": "bash scripts/runtime.sh scripts/words.py",
+    "dates": "bash scripts/runtime.sh scripts/dates.py"
   },
   "engines": {
     "npm": ">=10.9.2",
