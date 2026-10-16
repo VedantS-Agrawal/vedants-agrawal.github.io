@@ -1,11 +1,11 @@
 ---
 title: Grades and competition crowd out intrinsic motivation
 type: evergreen
-date: '2026-10-16'
+date: '2023-02-28'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 Competition and grading are external motivators, and they reduce the drive that's intrinsic. When an early sense of security, autonomy, social support, and ability is threatened and made contingent on external rewards, a person has to work *against* their intrinsically motivating forces.

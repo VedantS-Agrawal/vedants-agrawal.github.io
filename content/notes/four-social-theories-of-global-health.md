@@ -1,11 +1,11 @@
 ---
 title: Four social theories of global health
 type: concept
-date: '2026-10-16'
+date: '2023-03-04'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 From a medical anthropology class in Seville. Medical anthropology studies health, healing, and illness within their political, economic, and social context.

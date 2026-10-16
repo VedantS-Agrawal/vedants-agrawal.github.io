@@ -1,11 +1,11 @@
 ---
 title: Principal component analysis
 type: concept
-date: '2026-10-16'
+date: '2023-12-27'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 aliases:
 - PCA
 ---

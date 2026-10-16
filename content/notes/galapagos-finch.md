@@ -1,11 +1,11 @@
 ---
 title: Galapagos finch
 type: concept
-date: '2026-10-16'
+date: '2022-11-11'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 One of the observations that led Darwin to natural selection: 14 finch species on the Galapagos whose main difference was the beak, each one suited to how that species fed.

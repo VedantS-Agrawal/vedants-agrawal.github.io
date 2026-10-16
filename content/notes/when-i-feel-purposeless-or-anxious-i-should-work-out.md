@@ -1,11 +1,11 @@
 ---
 title: When I feel purposeless or anxious, I should work out
 type: evergreen
-date: '2026-10-16'
+date: '2023-03-18'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 After vigorous cardio I feel much more comfortable in my own mind — not racing, grounded and stable.

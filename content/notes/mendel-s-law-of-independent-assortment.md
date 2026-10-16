@@ -1,11 +1,11 @@
 ---
 title: Mendel's law of independent assortment
 type: concept
-date: '2026-10-16'
+date: '2022-11-11'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 The law: inheriting one allele doesn't affect inheriting another.

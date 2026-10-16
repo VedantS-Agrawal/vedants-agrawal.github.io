@@ -50,6 +50,7 @@
     dow1: { weekday: 'narrow' },
   };
   const fmtCache = {};
+  const fdE = e => e.datePrecision === 'month' ? fd(e.date.slice(0, 7), 'monY') : e.datePrecision === 'year' ? e.date.slice(0, 4) : fd(e.date, 'long');
   const fd = (s, kind = 'long') => (fmtCache[kind] ??= new Intl.DateTimeFormat('en-US', DATE_FMT[kind])).format(parse(String(s).length === 7 ? `${s}-01` : s));
   const MONTH_STARTS = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
 
@@ -319,14 +320,14 @@
 
   const groupByDay = entries => {
     const m = new Map();
-    [...entries].sort(byDateDesc).forEach(e => { if (!m.has(e.date)) m.set(e.date, []); m.get(e.date).push(e); });
+    [...entries].sort(byDateDesc).forEach(e => { const k = e.datePrecision === 'month' ? e.date.slice(0, 7) : e.date; if (!m.has(k)) m.set(k, []); m.get(k).push(e); });
     return [...m];
   };
   const dayHtml = (date, items, opts = {}, latest = false) => {
     const rich = items.filter(e => e.type !== 'activity');
     const train = items.filter(e => e.type === 'activity').map(e => e._act).sort((a, b) => a.start - b.start);
     const well = opts.well ? wellHtml(opts.well.get(date), date) : '';
-    return `<li class="day ${rich.length ? 'rich' : 'train-only'}${latest ? ' latest' : ''}"><span class="node" aria-hidden="true"></span><div class="day-date"><time datetime="${date}">${esc(fd(date, 'day'))}</time></div>${well}${rich.map(richHtml).join('')}${train.length ? trainLine(train) : ''}</li>`;
+    return `<li class="day ${rich.length ? 'rich' : 'train-only'}${latest ? ' latest' : ''}"><span class="node" aria-hidden="true"></span><div class="day-date"><time datetime="${date}">${esc(date.length === 7 ? fd(date, 'monY') : fd(date, 'day'))}</time></div>${well}${rich.map(richHtml).join('')}${train.length ? trainLine(train) : ''}</li>`;
   };
   const timelineHtml = (days, opts = {}) => {
     let out = '', lastM = '';
@@ -392,7 +393,7 @@
       ${introCard(data)}
       <div class="home-grid">
         <section aria-label="Recent entries">${days.length ? `${timelineHtml(days, { well: well && well.map, latest: true })}<p class="more-row"><a class="link" href="/stream/">Stream →</a></p>` : emptyState('Nothing here yet.')}</section>
-        <aside class="aside" aria-label="Current">${projectsBlock(entries)}${weekBlock(training)}</aside>
+        <aside class="aside" aria-label="Current">${weekBlock(training)}</aside>
       </div>`, true);
     bindTip($('.aside'));
   };
@@ -445,7 +446,7 @@
     const index = items.map(e => [e, hay(e)]);
     let q = new URLSearchParams(location.search).get('q') || '';
     page(`${head('Writing', 'writing', data)}${items.length ? `<div class="toolbar"><label class="filter"><span class="sr-only">Filter writing by title, tag or summary</span><input type="search" id="w-q" placeholder="Filter" autocomplete="off" spellcheck="false" value="${esc(q)}"></label><span class="count" id="w-count" aria-live="polite"></span></div>` : ''}<div id="w-list"></div>`);
-    const row = e => `<li><a class="w-title" href="${href(e)}">${esc(e.title)}</a>${tagsOf(e).length ? `<span class="topics">${tagsOf(e).map(t => tagBtn(t, false, ' sm')).join('')}</span>` : ''}<time class="w-date" datetime="${e.date}">${esc(fd(e.date, 'long'))}</time></li>`;
+    const row = e => `<li><a class="w-title" href="${href(e)}">${esc(e.title)}</a>${tagsOf(e).length ? `<span class="topics">${tagsOf(e).map(t => tagBtn(t, false, ' sm')).join('')}</span>` : ''}<time class="w-date" datetime="${e.date}">${esc(fdE(e))}</time></li>`;
     const draw = () => {
       const needle = q.trim().toLowerCase();
       const list = needle ? index.filter(([, h]) => needle.split(/\s+/).every(t => h.includes(t))).map(x => x[0]) : items;
@@ -514,7 +515,7 @@
       if (e.type === 'project') {
         return `<li class="row"><h3><a href="${href(e)}">${esc(e.title)}</a>${ext(e)}</h3><span class="meta">${e.status ? `<span class="pill ${e.status === 'active' ? 'active' : ''}">${esc(e.status)}</span>` : 'project'}</span>${e.summary ? `<p class="sum">${esc(e.summary)}</p>` : ''}${itemTags(tags)}</li>`;
       }
-      const when = e.consumption_status === 'finished' && isDay(e.finished) ? fd(e.finished, 'long') : '';
+      const when = e.consumption_status !== 'finished' ? '' : isDay(e.finished) ? fd(e.finished, 'long') : /^\d{4}-\d{2}$/.test(String(e.finished)) ? fd(e.finished, 'monY') : '';
       return `<li class="row"><h3><a href="${href(e)}">${esc(e.title)}</a></h3>${e.creator ? `<p class="by">${esc(e.creator)}</p>` : ''}<span class="meta">${esc([e.medium, when].filter(Boolean).join(' · '))}</span>${itemTags(tags)}</li>`;
     };
     const card = ({ e, tags }) => {
@@ -597,7 +598,7 @@
     const mine = entries.filter(e => STREAM_TYPES.has(e.type) && inM(e));
     const intro = entries.find(e => e.type === 'month' && (inM(e) || String(e.url).includes(month)));
     const writing = mine.filter(e => WRITING.has(e.type)).sort(byDateDesc);
-    const finished = entries.filter(e => e.type === 'literature' && e.consumption_status === 'finished' && (isDay(e.finished) ? e.finished.startsWith(month) : inM(e)));
+    const finished = entries.filter(e => e.type === 'literature' && e.consumption_status === 'finished' && (/^\d{4}-\d{2}/.test(String(e.finished || '')) ? String(e.finished).startsWith(month) : inM(e)));
     const projects = mine.filter(e => e.type === 'project').sort(byDateDesc);
     const photos = mine.filter(e => e.type === 'photo').sort(byDateDesc);
     const acts = training.activities.filter(a => a.date.startsWith(month));

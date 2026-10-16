@@ -1,11 +1,11 @@
 ---
 title: Self-talk ritual
 type: concept
-date: '2026-10-16'
+date: '2022-10-23'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 From Mark Queppet's *The Reboot Regimen*. The point: improve the quality of internal discussion so the rational mind can interpret emotional responses and steer them toward actions that help.

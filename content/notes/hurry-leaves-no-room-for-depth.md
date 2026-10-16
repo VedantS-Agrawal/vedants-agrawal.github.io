@@ -1,11 +1,11 @@
 ---
 title: Hurry leaves no room for depth
 type: evergreen
-date: '2026-10-16'
+date: '2022-12-13'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 I hurry through life. I want things done fast, I want "better" ways of doing things — and I often can't find the patience and calm to hear a friend out, which is the truest display of empathy.

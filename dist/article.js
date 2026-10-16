@@ -72,7 +72,14 @@
     const pub = day(entry.published) || day(entry.date);
     const upd = day(entry.updated);
     const facts = [];
-    if (!isPage && pub) facts.push(`<span>published <time datetime="${esc(pub)}">${esc(shortDate(pub))}</time></span>`);
+    // Lead with when it happened: started (notes), finished (books), the day (reflections, workouts).
+    const when = day(entry.date);
+    const whenText = !when ? '' : entry.datePrecision === 'month' ? new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(parseDay(when))
+      : entry.datePrecision === 'year' ? when.slice(0, 4) : shortDate(when);
+    const whenLabel = entry.type === 'literature' && entry.consumption_status === 'finished' ? 'finished'
+      : ['reflection', 'activity', 'photo', 'daily'].includes(entry.type) ? '' : 'started';
+    if (!isPage && when) facts.push(`<span>${whenLabel ? whenLabel + ' ' : ''}<time datetime="${esc(when)}">${esc(whenText)}</time></span>`);
+    if (!isPage && pub && pub !== when) facts.push(`<span class="faint">published <time datetime="${esc(pub)}">${esc(shortDate(pub))}</time></span>`);
     if (upd && (isPage || upd !== pub)) facts.push(`<span>updated <time datetime="${esc(upd)}">${esc(shortDate(upd))}</time></span>`);
     const words = Number(entry.words);
     if (!isPage && entry.type !== 'activity' && Number.isFinite(words) && words > 0) facts.push(`<span>${Math.max(1, Math.round(words / 230))} min read</span>`);
@@ -380,4 +387,21 @@
       if (hasSeries && !chartBlock(host.querySelector('#ap-charts'), a.series, group)) host.querySelector('#ap-charts').innerHTML = '<p class="ap-note">Detailed samples pending</p>';
     })
     .catch(() => { host.innerHTML = '<p class="ap-note">Activity details unavailable</p>'; });
+})();
+
+/* Reading progress: a 2px orange line that fills as you read. */
+(() => {
+  const article = document.querySelector('article');
+  if (!article || article.scrollHeight < window.innerHeight * 1.4) return;
+  const bar = document.createElement('div'); bar.className = 'read-progress'; bar.setAttribute('aria-hidden', 'true');
+  document.body.append(bar);
+  let ticking = false;
+  const update = () => {
+    const rect = article.getBoundingClientRect();
+    const total = rect.height - window.innerHeight;
+    const done = total > 0 ? Math.min(1, Math.max(0, -rect.top / total)) : 1;
+    bar.style.transform = `scaleX(${done})`; ticking = false;
+  };
+  addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
+  addEventListener('resize', update); update();
 })();

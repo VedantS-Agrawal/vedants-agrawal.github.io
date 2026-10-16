@@ -1,11 +1,11 @@
 ---
 title: Reading without review mostly evaporates
 type: evergreen
-date: '2026-10-16'
+date: '2023-02-21'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 There's no purpose to reading educational material without making review material for it. Otherwise I won't make progress in my understanding.

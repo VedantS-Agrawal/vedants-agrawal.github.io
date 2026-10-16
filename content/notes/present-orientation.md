@@ -1,11 +1,11 @@
 ---
 title: Present orientation
 type: concept
-date: '2026-10-16'
+date: '2022-10-22'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 Being in the present avoids the short-circuiting of self-conscious thought. Self-conscious thoughts turn into rumination, and attention gets fed into them, taking resources from problem-solving. Like thinking about whether you'll make the shot while you're shooting — it takes you out of flow.

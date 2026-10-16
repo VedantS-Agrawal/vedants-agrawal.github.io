@@ -1,11 +1,11 @@
 ---
 title: The voice inside your head
 type: concept
-date: '2026-10-16'
+date: '2022-11-02'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 The voice in our head is constantly trying to find a comfortable resting place — *internal coherence*, the brain's need to fit new information into its existing schemas. It will change viewpoints and shift perspective to get there. It reminds me of the hedonic treadmill: this voice keeps moving the set-point for silence.

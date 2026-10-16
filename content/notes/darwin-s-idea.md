@@ -1,11 +1,11 @@
 ---
 title: Darwin's idea
 type: concept
-date: '2026-10-16'
+date: '2022-11-11'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 Natural selection: organisms vary, the variants that suit the needs of their environment are selected for, and the population changes.

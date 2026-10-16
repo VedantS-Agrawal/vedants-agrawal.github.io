@@ -1,11 +1,11 @@
 ---
 title: Technological determinists vs instrumentalists
 type: concept
-date: '2026-10-16'
-published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
-created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+date: '2022-11-02'
+published: '2026-10-16T15:09:21-05:00'
+updated: '2026-10-16'
+created: '2026-10-16T15:09:21-05:00'
+modified: '2026-10-16'
 ---
 
 - **Determinists**: the technologies we use change how we think, and we have little to no control over how.

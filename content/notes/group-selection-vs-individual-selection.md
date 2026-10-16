@@ -1,11 +1,11 @@
 ---
 title: Group selection vs individual selection
 type: concept
-date: '2026-10-16'
+date: '2023-04-13'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 Groups are a collection of individuals each acting to optimize their own well-being. That includes supposed altruism — we're altruistic when there's a benefit likely to pay off over time.

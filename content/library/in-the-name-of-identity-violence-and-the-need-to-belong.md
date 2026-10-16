@@ -1,11 +1,11 @@
 ---
 title: 'In the Name of Identity: Violence and the Need to Belong'
 type: literature
-date: '2026-10-16'
+date: '2022-11-13'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 Three parts. First, what identity is: not any single affiliation or piece of heritage, but the combination of all of them that makes a person unique — it can't be divided into halves or thirds. Second, a history of modernization and religion's role as universal values of human dignity spread; examples of tolerance in both Christianity and Islam; and how tying modernity to the West made non-Western groups feel threatened and cling harder to one facet of identity. Third, how to unite people under modernity while keeping their identities.

@@ -1,11 +1,11 @@
 ---
 title: CheXNet, explained
-type: project
-date: '2026-10-16'
+type: writing
+date: '2026-10-13'
 published: '2026-10-16T13:08:03-05:00'
-updated: '2026-10-16T13:08:03-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T13:08:03-05:00'
-modified: '2026-10-16T13:08:03-05:00'
+modified: '2026-10-16'
 ---
 
 An interactive reading companion to *Reproducing and Improving CheXNet*. Explore focal loss, thresholds, patient splitting, calibration, and the difference between reported results and teaching simulations.

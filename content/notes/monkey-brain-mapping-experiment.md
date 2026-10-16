@@ -1,11 +1,11 @@
 ---
 title: Monkey brain mapping experiment
 type: concept
-date: '2026-10-16'
-published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
-created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+date: '2022-11-01'
+published: '2026-10-16T15:09:21-05:00'
+updated: '2026-10-16'
+created: '2026-10-16T15:09:21-05:00'
+modified: '2026-10-16'
 ---
 
 Michael Merzenich used microelectrodes to make fine maps of where a monkey's hand is represented in the brain — which neuron fires when which spot on the hand is touched.

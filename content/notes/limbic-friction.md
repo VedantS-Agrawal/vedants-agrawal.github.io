@@ -1,11 +1,11 @@
 ---
 title: Limbic friction
 type: concept
-date: '2026-10-16'
+date: '2023-03-22'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 The resistance you feel when you know there's something you can do and you're refusing to do it — the friction my brain generates whenever I want to start an activity.

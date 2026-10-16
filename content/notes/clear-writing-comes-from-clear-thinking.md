@@ -1,11 +1,11 @@
 ---
 title: Clear writing comes from clear thinking
 type: evergreen
-date: '2026-10-16'
+date: '2022-12-03'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 Reading back my own writing, I fail to be concise and add filler. Even some of the "ands" are just a wish to be verbose. State what I feel, without adding justifications and reasons for it.

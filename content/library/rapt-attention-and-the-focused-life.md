@@ -1,11 +1,11 @@
 ---
 title: 'Rapt: Attention and the Focused Life'
 type: literature
-date: '2026-10-16'
+date: '2023-01-30'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 Personally, I found it quite great. It covered a lot of themes I'd already read, and a few sweeping cultural claims don't hold up — but there's much truth in it. It doesn't claim meditation is the answer; it argues that attention lies at the core of our existence.

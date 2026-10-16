@@ -1,11 +1,11 @@
 ---
 title: Constraint relaxation
 type: concept
-date: '2026-10-16'
+date: '2022-11-16'
 published: '2026-10-16T14:47:19-05:00'
-updated: '2026-10-16T14:47:19-05:00'
+updated: '2026-10-16'
 created: '2026-10-16T14:47:19-05:00'
-modified: '2026-10-16T14:47:19-05:00'
+modified: '2026-10-16'
 ---
 
 Some problems are effectively intractable — they're solved in O(n!) time, so the truly optimal answer can't be reached in a tractable amount of time. Relax the constraints and you reach a semi-optimal solution in a fraction of the time.
