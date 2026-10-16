@@ -1,0 +1,97 @@
+configuration:
+  pageTitle: Vedant Agrawal
+  pageTitleSuffix: ''
+  enableSPA: false
+  enablePopovers: true
+  analytics: null
+  locale: en-US
+  baseUrl: vedants-agrawal.github.io
+  ignorePatterns:
+  - private
+  - templates
+  - .obsidian
+  theme:
+    fontOrigin: local
+    cdnCaching: false
+    typography:
+      header: Georgia
+      body: Arial
+      code: monospace
+    colors:
+      lightMode: &id001
+        light: '#160d24'
+        lightgray: '#3a294b'
+        gray: '#a18db4'
+        darkgray: '#ded4e7'
+        dark: '#f6f0e8'
+        secondary: '#ff9a3c'
+        tertiary: '#ffc489'
+        highlight: '#35213e'
+        textHighlight: '#ff9a3c33'
+      darkMode: *id001
+plugins:
+- source: '@quartz-community/note-properties'
+  enabled: true
+  options:
+    includeAll: false
+    includedProperties: []
+    excludedProperties: []
+    hidePropertiesView: true
+    delimiters: '---'
+    language: yaml
+  order: 5
+- source: '@quartz-community/created-modified-date'
+  enabled: true
+  options:
+    defaultDateType: created
+    priority:
+    - frontmatter
+  order: 10
+- source: '@quartz-community/obsidian-flavored-markdown'
+  enabled: true
+  options:
+    enableInHtmlEmbed: false
+    enableCheckbox: true
+  order: 30
+- source: '@quartz-community/github-flavored-markdown'
+  enabled: true
+  order: 40
+- source: '@quartz-community/crawl-links'
+  enabled: true
+  options:
+    markdownLinkResolution: shortest
+  order: 60
+- source: '@quartz-community/description'
+  enabled: true
+  order: 70
+- source: '@quartz-community/latex'
+  enabled: true
+  options:
+    renderEngine: katex
+  order: 80
+- source: '@quartz-community/alias-redirects'
+  enabled: true
+- source: '@quartz-community/content-index'
+  enabled: true
+  options:
+    enableSiteMap: true
+    enableRSS: true
+- source: '@quartz-community/content-page'
+  enabled: true
+- source: '@quartz-community/backlinks'
+  enabled: true
+  layout:
+    position: afterBody
+    priority: 10
+- source: '@quartz-community/article-title'
+  enabled: true
+  layout:
+    position: beforeBody
+    priority: 10
+layout:
+  byPageType:
+    content:
+      template: full-width
+      positions:
+        left: []
+        right: []

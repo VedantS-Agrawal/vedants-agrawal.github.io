@@ -1,0 +1,10 @@
+{
+  "attachmentFolderPath": "Media/Photos",
+  "newFileLocation": "folder",
+  "newFileFolderPath": "Inbox",
+  "alwaysUpdateLinks": true,
+  "showLineNumber": false,
+  "defaultViewMode": "source",
+  "livePreview": true,
+  "propertiesInDocument": "visible"
+}

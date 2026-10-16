@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+    <channel>
+      <title>Vedant Agrawal</title>
+      <link>https://vedants-agrawal.github.io</link>
+      <description>Last 10 notes on Vedant Agrawal</description>
+      <generator>Quartz -- quartz.jzhao.xyz</generator>
+      <item>
+    <title>Vedant Agrawal</title>
+    <link>https://vedants-agrawal.github.io/</link>
+    <guid>https://vedants-agrawal.github.io/</guid>
+    <description><![CDATA[  ]]></description>
+    <pubDate>Fri, 16 Oct 2026 18:08:05 GMT</pubDate>
+  </item><item>
+    <title>About</title>
+    <link>https://vedants-agrawal.github.io/about</link>
+    <guid>https://vedants-agrawal.github.io/about</guid>
+    <description><![CDATA[ [About me] [Links]. ]]></description>
+    <pubDate>Fri, 16 Oct 2026 18:08:03 GMT</pubDate>
+  </item><item>
+    <title>Colophon</title>
+    <link>https://vedants-agrawal.github.io/colophon</link>
+    <guid>https://vedants-agrawal.github.io/colophon</guid>
+    <description><![CDATA[ [How this site is made]. ]]></description>
+    <pubDate>Fri, 16 Oct 2026 18:08:03 GMT</pubDate>
+  </item><item>
+    <title>CheXNet, explained</title>
+    <link>https://vedants-agrawal.github.io/projects/chexnet-explained</link>
+    <guid>https://vedants-agrawal.github.io/projects/chexnet-explained</guid>
+    <description><![CDATA[ An interactive reading companion to Reproducing and Improving CheXNet. ]]></description>
+    <pubDate>Fri, 16 Oct 2026 18:08:03 GMT</pubDate>
+  </item><item>
+    <title>Pneumonia Image Lab</title>
+    <link>https://vedants-agrawal.github.io/projects/pneumonia-image-lab</link>
+    <guid>https://vedants-agrawal.github.io/projects/pneumonia-image-lab</guid>
+    <description><![CDATA[ A small convolutional neural network trained on 28 × 28 chest X-rays from PneumoniaMNIST. ]]></description>
+    <pubDate>Fri, 16 Oct 2026 18:08:03 GMT</pubDate>
+  </item><item>
+    <title>Galveston Run</title>
+    <link>https://vedants-agrawal.github.io/stream/training/2026-08-21-galveston-run</link>
+    <guid>https://vedants-agrawal.github.io/stream/training/2026-08-21-galveston-run</guid>
+    <description><![CDATA[  ]]></description>
+    <pubDate>Fri, 16 Oct 2026 18:08:03 GMT</pubDate>
+  </item><item>
+    <title>Strength</title>
+    <link>https://vedants-agrawal.github.io/stream/training/2026-08-21-strength</link>
+    <guid>https://vedants-agrawal.github.io/stream/training/2026-08-21-strength</guid>
+    <description><![CDATA[  ]]></description>
+    <pubDate>Fri, 16 Oct 2026 18:08:03 GMT</pubDate>
+  </item><item>
+    <title>Indoor Cycling</title>
+    <link>https://vedants-agrawal.github.io/stream/training/2026-08-23-indoor-cycling</link>
+    <guid>https://vedants-agrawal.github.io/stream/training/2026-08-23-indoor-cycling</guid>
+    <description><![CDATA[  ]]></description>
+    <pubDate>Fri, 16 Oct 2026 18:08:03 GMT</pubDate>
+  </item><item>
+    <title>Pool Swim</title>
+    <link>https://vedants-agrawal.github.io/stream/training/2026-08-23-pool-swim</link>
+    <guid>https://vedants-agrawal.github.io/stream/training/2026-08-23-pool-swim</guid>
+    <description><![CDATA[  ]]></description>
+    <pubDate>Fri, 16 Oct 2026 18:08:03 GMT</pubDate>
+  </item><item>
+    <title>Strength</title>
+    <link>https://vedants-agrawal.github.io/stream/training/2026-08-23-strength</link>
+    <guid>https://vedants-agrawal.github.io/stream/training/2026-08-23-strength</guid>
+    <description><![CDATA[  ]]></description>
+    <pubDate>Fri, 16 Oct 2026 18:08:03 GMT</pubDate>
+  </item>
+    </channel>
+  </rss>

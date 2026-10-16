@@ -1,0 +1,18 @@
+filters:
+  or:
+    - type == "concept"
+    - type == "evergreen"
+views:
+  - type: table
+    name: Ideas
+    groupBy:
+      property: type
+      direction: ASC
+    order:
+      - file.name
+      - maturity
+      - tags
+      - visibility
+    sort:
+      - property: file.mtime
+        direction: DESC

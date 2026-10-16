@@ -1,0 +1,15 @@
+filters:
+  and:
+    - visibility == "public"
+    - type != "activity"
+views:
+  - type: table
+    name: Public notes
+    order:
+      - file.name
+      - type
+      - file.folder
+      - file.mtime
+    sort:
+      - property: file.mtime
+        direction: DESC

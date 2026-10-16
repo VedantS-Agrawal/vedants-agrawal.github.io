@@ -1,0 +1,50 @@
+{
+  "items": [
+    {
+      "type": "file",
+      "path": "Home.md",
+      "title": "Home"
+    },
+    {
+      "type": "file",
+      "path": "Guide/Walkthrough.md",
+      "title": "Walkthrough"
+    },
+    {
+      "type": "file",
+      "path": "_System/Publishing status.md",
+      "title": "Publishing status"
+    },
+    {
+      "type": "file",
+      "path": "Website changes.md",
+      "title": "Website changes"
+    },
+    {
+      "type": "group",
+      "title": "Dashboards",
+      "items": [
+        {
+          "type": "file",
+          "path": "Dashboards/Library.base"
+        },
+        {
+          "type": "file",
+          "path": "Dashboards/Training.base"
+        },
+        {
+          "type": "file",
+          "path": "Dashboards/Projects.base"
+        },
+        {
+          "type": "file",
+          "path": "Dashboards/Ideas.base"
+        },
+        {
+          "type": "file",
+          "path": "Dashboards/Publishing.base"
+        }
+      ]
+    }
+  ]
+}

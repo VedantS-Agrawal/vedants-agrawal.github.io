@@ -1,0 +1,33 @@
+filters:
+  and:
+    - type == "activity"
+views:
+  - type: table
+    name: All activities
+    order:
+      - date
+      - file.name
+      - sport
+      - duration
+      - distance_mi
+      - distance_yd
+      - pace
+      - speed_mph
+      - elevation_ft
+      - avg_hr
+      - load
+    sort:
+      - property: date
+        direction: DESC
+  - type: table
+    name: Needs a note
+    filters:
+      and:
+        - file.size < 400
+    order:
+      - date
+      - file.name
+      - sport
+    sort:
+      - property: date
+        direction: DESC

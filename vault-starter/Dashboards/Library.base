@@ -1,0 +1,24 @@
+filters:
+  and:
+    - type == "literature"
+views:
+  - type: table
+    name: Shelf
+    groupBy:
+      property: consumption_status
+      direction: ASC
+    order:
+      - file.name
+      - creator
+      - medium
+      - finished
+      - visibility
+    sort:
+      - property: file.mtime
+        direction: DESC
+  - type: cards
+    name: Covers
+    image: note.cover
+    order:
+      - file.name
+      - creator
