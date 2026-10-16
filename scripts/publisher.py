@@ -253,8 +253,13 @@ class Exporter:
             text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
             return re.sub(r'(?<![*\w])[*_](.+?)[*_](?![*\w])', r'<em>\1</em>', text)
         token = re.compile(r'\[\[([^\]]+)\]\]|\[([^\]]+)\]\(([^)\s]+)\)')
+        def embed(m):   # ![[Note]] → that note's text, if it's public
+            try: other = resolve_note(m.group(1).split('|')[0], 'Home.md', self.all)
+            except Held: return ''
+            return re.sub(r'%%.*?%%', '', other['body'], flags=re.S).strip() if other['path'] in self.routes else ''
+        body = re.sub(r'!\[\[([^\]]+)\]\]', embed, re.sub(r'%%.*?%%', '', body, flags=re.S))
         out = []
-        for para in re.split(r'\n\s*\n', re.sub(r'%%.*?%%', '', body, flags=re.S).strip()):
+        for para in re.split(r'\n\s*\n', body.strip()):
             parts, last = [], 0
             for m in token.finditer(para):
                 parts.append(inline(para[last:m.start()]))

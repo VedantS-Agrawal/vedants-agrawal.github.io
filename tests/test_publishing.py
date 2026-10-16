@@ -101,6 +101,15 @@ class PublicationTests(unittest.TestCase):
         self.assertIn('<a href="/notes/essay.html">Essay</a>', intro)
         self.assertIn('hid Secret &lt;b&gt;', intro)
 
+    def test_home_embeds_about_note(self):
+        common.write_note(self.vault / 'About me.md', {'title': 'About', 'type': 'page', 'visibility': 'public'}, 'I [[Training|train]].')
+        common.write_note(self.vault / 'Home.md', {'title': 'Home', 'type': 'home'}, '![[About me]]\n\n%% note %%')
+        publisher.export()
+        self.assertEqual(json.loads((self.root / 'content/site-data.json').read_text())['introHtml'], '<p>I <a href="/stream/training/">train</a>.</p>')
+        common.write_note(self.vault / 'About me.md', {'title': 'About', 'type': 'page', 'visibility': 'public'}, '')
+        publisher.export()
+        self.assertEqual(json.loads((self.root / 'content/site-data.json').read_text())['introHtml'], '')
+
     def test_cover_from_vault_image(self):
         from PIL import Image
         (self.vault / 'Media/Photos').mkdir(parents=True); Image.new('RGB', (20, 30)).save(self.vault / 'Media/Photos/c.jpg')

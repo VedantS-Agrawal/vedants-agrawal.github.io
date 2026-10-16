@@ -399,7 +399,7 @@
   const INTRO_MORE = [['Archive', '/archive/'], ['Tags', '/tags/'], ['Colophon', '/colophon.html'], ['RSS', '/index.xml']];
   const introCard = data => {
     /* introHtml is produced by the publisher (p/a/em/strong only); the plain fallback is escaped here */
-    const body = data.introHtml ? String(data.introHtml)
+    const body = data.introHtml != null ? String(data.introHtml)   // '' = intentionally blank
       : `${data.intro ? `<p>${esc(data.intro)}</p>` : ''}${data.description ? `<p>${esc(data.description)}</p>` : ''}` || '<p>[Introduction]</p>';
     return `<section class="intro-card" aria-label="Introduction"><nav class="intro-nav" aria-label="Sections"><ul>${INTRO_NAV.map(([l, u]) => `<li><a href="${u}">${l}</a></li>`).join('')}</ul><ul class="more">${INTRO_MORE.map(([l, u]) => `<li><a href="${u}">${l}</a></li>`).join('')}</ul></nav><div class="intro-body">${body}</div></section>`;
   };
