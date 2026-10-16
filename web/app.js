@@ -392,7 +392,7 @@
       ${introCard(data)}
       <div class="home-grid">
         <section aria-label="Recent entries">${days.length ? `${timelineHtml(days, { well: well && well.map, latest: true })}<p class="more-row"><a class="link" href="/stream/">Stream →</a></p>` : emptyState('Nothing here yet.')}</section>
-        <aside class="aside" aria-label="Current">${projectsBlock(entries)}${weekBlock(training)}</aside>
+        <aside class="aside" aria-label="Current">${weekBlock(training)}</aside>
       </div>`, true);
     bindTip($('.aside'));
   };

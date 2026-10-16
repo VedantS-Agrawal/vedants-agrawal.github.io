@@ -1,7 +1,7 @@
 """Vault exporter and static-site publisher.
 
 Rules (docs/Architecture.md §1–2): a note is public when `visibility: public`, or when the
-property is absent and its type defaults to public (project, activity, block, month). A public note with a problem is held
+property is absent and its type defaults to public (activity, block, month). A public note with a problem is held
 back and reported; it never blocks the rest of the site.
 """
 import argparse, hashlib, html, json, re, shutil, subprocess, sys
@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from common import *
 
-PUBLIC_TYPES = ('project', 'activity', 'block', 'month')
+PUBLIC_TYPES = ('activity', 'block', 'month')
 SKIP_FOLDERS = ('_System/', 'Templates/', 'Guide/')
 AUDIO = ('.mp3', '.m4a', '.wav', '.ogg', '.aac')
 IMAGES = ('.jpg', '.jpeg', '.png', '.webp', '.heic')
@@ -345,7 +345,7 @@ def finish():
         if 'id="app"' in text or '/article.js' in text: continue
         p.write_text(text.replace('</head>', '<link rel="stylesheet" href="/site.css"><link rel="stylesheet" href="/palette.css"><script defer src="/article.js"></script><script defer src="/palette.js"></script></head>'))
     (dest / 'projects').mkdir(exist_ok=True)
-    shutil.copy2(ROOT / 'web/projects-redirect.html', dest / 'projects/index.html')  # old /projects/ links
+    shutil.copy2(ROOT / 'web/projects-redirect.html', dest / 'projects/index.html')  # old /projects/ index → Writing
     (dest / 'projects-redirect.html').unlink(missing_ok=True)
     (dest / '.nojekyll').touch()
 

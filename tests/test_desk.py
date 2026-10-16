@@ -8,7 +8,6 @@ TEMPLATES = {
     'Free writing': '---\ntitle: "{{title}}"\ntype: writing\nvisibility: private\ncreated: "{{date}}"\ntopics: []\n---\n',
     'Literature': '---\ntitle: "{{title}}"\ntype: literature\nvisibility: private\ncreator: ""\nmedium: book\nsource_url: ""\nconsumption_status: saved\nfinished: ""\ncreated: "{{date}}"\ntopics: []\n---\n',
     'Photo': '---\ntitle: "{{title}}"\ntype: photo\nvisibility: private\ndate: "{{date}}"\n---\n',
-    'Project': '---\ntitle: "{{title}}"\ntype: project\nstatus: active\nurl: ""\n---\n',
 }
 
 
@@ -48,15 +47,16 @@ class DeskTests(unittest.TestCase):
         desk.set_visibility('Writing/X.md', True)
         self.assertEqual(self.read('Writing/X.md'), text.replace('private', 'public'))
 
-    def test_project_visibility_is_removed_when_public(self):
-        text = '---\ntitle: P\ntype: project\nstatus: active\nurl: ""\n---\n\nBody\n'
-        (self.vault / 'Library/Projects/P.md').write_text(text)
-        out = desk.set_visibility('Library/Projects/P.md', False)
+    def test_public_default_visibility_is_removed_when_public(self):
+        (self.vault / 'Training/Blocks').mkdir(parents=True)
+        text = '---\ntitle: P\ntype: block\nstart: ""\n---\n\nBody\n'
+        (self.vault / 'Training/Blocks/P.md').write_text(text)
+        out = desk.set_visibility('Training/Blocks/P.md', False)
         self.assertEqual(out['visibility'], 'private')
-        self.assertEqual(self.read('Library/Projects/P.md'), text.replace('type: project\n', 'type: project\nvisibility: private\n'))
-        out = desk.set_visibility('Library/Projects/P.md', True)
+        self.assertEqual(self.read('Training/Blocks/P.md'), text.replace('type: block\n', 'type: block\nvisibility: private\n'))
+        out = desk.set_visibility('Training/Blocks/P.md', True)
         self.assertEqual(out['visibility'], 'public')
-        self.assertEqual(self.read('Library/Projects/P.md'), text)
+        self.assertEqual(self.read('Training/Blocks/P.md'), text)
 
     def test_visibility_without_frontmatter_and_bad_input(self):
         (self.vault / 'Writing/Plain.md').write_text('Just text\n')
@@ -92,14 +92,6 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(desk.fetch_title('https://127.0.0.1/'), '')
         self.assertEqual(desk.fetch_title('https://localhost/'), '')
 
-    def test_project_has_exactly_four_properties(self):
-        out = desk.capture_project({'title': 'Atlas', 'url': 'https://example.com'})
-        self.assertEqual(out['path'], 'Library/Projects/Atlas.md')
-        meta, _ = common.parse_note(self.vault / out['path'])
-        self.assertEqual(list(meta), ['title', 'type', 'status', 'url'])
-        self.assertEqual(meta['url'], 'https://example.com')
-        self.assertEqual(out['visibility'], 'public')
-
     def test_photos_are_saved_and_embedded_in_a_private_note(self):
         from PIL import Image
         buf = io.BytesIO(); Image.new('RGB', (8, 8), 'red').save(buf, 'JPEG')
@@ -131,15 +123,15 @@ class DeskTests(unittest.TestCase):
 
     # -- status and long operations -----------------------------------------------
     def test_status_lists_ready_and_obsidian_link(self):
-        (self.vault / 'Library/Projects/Atlas.md').write_text('---\ntitle: Atlas\ntype: project\nstatus: active\nurl: ""\n---\n\nA project.\n')
+        (self.vault / 'Writing/Atlas.md').write_text('---\ntitle: Atlas\ntype: writing\nvisibility: public\n---\n\nAn essay.\n')
         (self.vault / 'Writing/Hidden.md').write_text('---\ntitle: Hidden\ntype: writing\n---\n\nPrivate.\n')
         s = desk.compute_status()
         self.assertEqual([x['title'] for x in s['ready']], ['Atlas'])
-        self.assertEqual(s['ready'][0]['folder'], 'Library/Projects')
+        self.assertEqual(s['ready'][0]['folder'], 'Writing')
         self.assertTrue(s['ready'][0]['obsidian'].startswith('obsidian://open?vault='))
-        self.assertIn('file=Library%2FProjects%2FAtlas', s['ready'][0]['obsidian'])
+        self.assertIn('file=Writing%2FAtlas', s['ready'][0]['obsidian'])
         self.assertEqual((s['attention'], s['changed']), ([], []))
-        desk.set_visibility('Library/Projects/Atlas.md', False)
+        desk.set_visibility('Writing/Atlas.md', False)
         self.assertEqual(desk.compute_status()['ready'], [])
 
     def test_failed_command_output_is_reported_verbatim(self):

@@ -27,10 +27,10 @@ class PublicationTests(unittest.TestCase):
     def test_visibility_and_folder_defaults(self):
         self.note('Writing/Draft.md', 'private words')
         self.note('Writing/Essay.md', 'public words', visibility='public')
-        self.note('Projects/Lab.md', 'a project', 'project', status='active', url='https://example.com')
-        self.note('Projects/Hidden.md', 'x', 'project', visibility='private')
+        self.note('Training/Blocks/Base.md', 'a block', 'block', start='2026-09-01', end='2026-10-01')
+        self.note('Training/Blocks/Hidden.md', 'x', 'block', visibility='private')
         titles = {e['title'] for e in (publisher.export(), self.entries())[1]}
-        self.assertEqual(titles, {'Essay', 'Lab'})
+        self.assertEqual(titles, {'Essay', 'Base'})
 
     def test_private_link_publishes_note_with_inert_text(self):
         self.note('Writing/Public.md', 'See [[Secret|the secret]].', visibility='public')
@@ -104,10 +104,10 @@ class PublicationTests(unittest.TestCase):
         self.assertTrue((self.root / 'content' / cover.lstrip('/')).is_file())
 
     def test_tags_come_only_from_yaml(self):
-        self.note('Library/Projects/Radiology/Lab.md', 'uses #ml', 'project', status='active', url='https://x.org', tags=['project', 'Radiology'])
+        self.note('Notes/Radiology/Lab.md', 'uses #ml', 'writing', visibility='public', tags=['ml', 'Radiology'])
         self.note('Library/Book.md', '', 'literature', visibility='public', medium='book', tags='philosophy')
         tags = {e['title']: e['tags'] for e in (publisher.export(), self.entries())[1]}
-        self.assertEqual(tags, {'Lab': ['project', 'radiology'], 'Book': ['philosophy']})
+        self.assertEqual(tags, {'Lab': ['ml', 'radiology'], 'Book': ['philosophy']})
 
     def test_traversal_and_raw_html_are_held(self):
         self.note('Writing/A.md', '[x](../Secret.md)', visibility='public')

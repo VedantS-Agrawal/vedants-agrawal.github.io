@@ -34,10 +34,6 @@
         },
         {
           "type": "file",
-          "path": "Dashboards/Projects.base"
-        },
-        {
-          "type": "file",
           "path": "Dashboards/Ideas.base"
         },
         {

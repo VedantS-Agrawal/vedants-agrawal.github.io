@@ -75,7 +75,7 @@ def set_visibility(path, public):
     p = note_path(path)
     raw = p.read_bytes().decode('utf-8')
     before, body = split_text(raw)
-    # Public-by-default notes (projects, activities) drop the property instead of repeating the default.
+    # Public-by-default notes (activities, training blocks, months) drop the property instead of repeating the default.
     probe = {k: v for k, v in before.items() if k != 'visibility'}
     remove = public and publisher.is_public({'meta': probe, 'path': path})
     value = 'public' if public else 'private'
@@ -114,7 +114,6 @@ FALLBACK = {
     'Literature': {'title': '{{title}}', 'type': 'literature', 'visibility': 'private', 'creator': '', 'medium': 'article',
                    'source_url': '', 'consumption_status': 'saved', 'finished': '', 'created': '{{date}}', 'topics': []},
     'Photo': {'title': '{{title}}', 'type': 'photo', 'visibility': 'private', 'date': '{{date}}'},
-    'Project': {'title': '{{title}}', 'type': 'project', 'status': 'active', 'url': ''},
 }
 
 
@@ -187,17 +186,6 @@ def capture_source(data):
     meta.update(title=title, source_url=url)
     if meta.get('medium') in (None, '', 'book'): meta['medium'] = 'article'
     path = unique('Library', safe_name(title)); write_note(path, meta, body)
-    return result(path, meta)
-
-
-def capture_project(data):
-    title = clean_title(data.get('title'))
-    if not title: raise ValueError('Enter a title')
-    url = str(data.get('url') or '').strip()
-    if url and (urlsplit(url).scheme not in ('http', 'https') or len(url) > 1000): raise ValueError('Enter a valid http(s) URL')
-    meta, body = from_template('Project', title)
-    meta = {'title': title, 'type': 'project', 'status': meta.get('status') or 'active', 'url': url}
-    path = unique('Library/Projects', safe_name(title)); write_note(path, meta, body)
     return result(path, meta)
 
 
@@ -376,7 +364,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._origin() or self.headers.get('X-Desk-Token') != desk.token or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
             return self._send(403, {'error': 'Invalid request'})
         routes = {
-            '/api/capture/write': capture_write, '/api/capture/source': capture_source, '/api/capture/project': capture_project,
+            '/api/capture/write': capture_write, '/api/capture/source': capture_source,
             '/api/capture/photos': capture_photos, '/api/photo': import_photo,
             '/api/visibility': lambda d: set_visibility(d.get('path'), d.get('public')),
             '/api/sync': lambda d: desk.sync(), '/api/preview': lambda d: desk.build_preview(), '/api/publish': lambda d: desk.publish(),

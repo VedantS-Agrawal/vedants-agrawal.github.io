@@ -27,16 +27,13 @@ Phone / laptop ──iCloud──▶ Obsidian vault (private, authoritative)
 | `Reflections/` | Reflections | private |
 | `Daily/` | Daily notes | private |
 | `Photos/` | Photo entries (a note that embeds one or more images) | private |
-| `Library/Projects/<Area>/` | One note per project (shown on the Library page) | **public** |
 | `Training/Activities/` | One note per COROS activity, created by the importer | **public** |
 | `Training/Blocks/` | Named training periods (`start`, `end`) | **public** |
 | `Monthly/` | Optional `YYYY-MM.md` introductions for monthly archives | **public** |
 | `Media/Photos/`, `Media/Audio/` | Original files | published only when embedded in a public note |
 | `Templates/`, `Guide/`, `_System/` | Never published | — |
 
-**The publication switch is the `visibility` property.** `visibility: public` publishes a note; `visibility: private` keeps it in the vault. When the property is absent, the default comes from the note's `type`: `project`, `activity`, `block`, and `month` are public; everything else is private. Folders are for your own organization only. This works identically on the phone and the laptop, so nothing has to be toggled in a separate tool.
-
-Project notes keep exactly four properties (`title`, `type`, `status`, `url`) and are public by default. Adding `visibility: private` hides one.
+**The publication switch is the `visibility` property.** `visibility: public` publishes a note; `visibility: private` keeps it in the vault. When the property is absent, the default comes from the note's `type`: `activity`, `block`, and `month` are public; everything else is private. Folders are for your own organization only. This works identically on the phone and the laptop, so nothing has to be toggled in a separate tool.
 
 Activity notes are created and refreshed by the importer. The importer owns their properties; you own the body. The body is your post-workout note (paste the COROS voice transcript here) and is published with the activity. Embed an audio file with `![[recording.m4a]]` to give the activity page a player.
 
@@ -181,3 +178,8 @@ Every field optional. In the stream and on the homepage each day's training grou
 **Note metadata strip** (Quartz pages, `article.js`): type, topics, published, updated (if different), reading time (`words`/230), permalink copy, citation copy (BibTeX). Data comes from the matching entry in `/site-data.json`.
 
 **Training season strip** (top of `/stream/training/`): one thin vertical line per session across the selected year, height = duration, grouped/colored by sport group; under it per-sport totals with small inline-SVG icons (count · distance or time); and a reference table of race distances (sprint, olympic, 70.3, ironman — swim/bike/run km) with your longest swim/ride/run so far marked against them.
+
+
+## 9. No projects
+
+There is no project type. Work like the radiology tools lives as ordinary notes (e.g. `Notes/Radiology/`, `type: writing`, `visibility: public`). Their original `/projects/<slug>` addresses are kept via `_System/publishing.json`; `/projects/` redirects to Writing.

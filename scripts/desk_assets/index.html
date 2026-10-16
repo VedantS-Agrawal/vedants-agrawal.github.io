@@ -37,7 +37,6 @@
       <button class="tab on" data-tab="write" role="tab">Write</button>
       <button class="tab" data-tab="source" role="tab">Save a source</button>
       <button class="tab" data-tab="photos" role="tab">Add photos</button>
-      <button class="tab" data-tab="project" role="tab">New project</button>
     </div>
     <form class="capture" data-panel="write">
       <label>Title<input name="title" required maxlength="160" autocomplete="off"></label>
@@ -53,11 +52,6 @@
       <label>Title<input name="title" maxlength="160" autocomplete="off"></label>
       <label>Caption<textarea name="caption" rows="2"></textarea></label>
       <button class="btn">Add</button>
-    </form>
-    <form class="capture" data-panel="project" hidden>
-      <label>Title<input name="title" required maxlength="160" autocomplete="off"></label>
-      <label>URL<input name="url" type="url" placeholder="https://" autocomplete="off"></label>
-      <button class="btn">Create</button>
     </form>
     <ul class="items" id="created"></ul>
   </section>
