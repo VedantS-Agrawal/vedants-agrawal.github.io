@@ -4,7 +4,7 @@ Rules (docs/Architecture.md §1–2): a note is public when `visibility: public`
 property is absent and its type defaults to public (project, activity, block, month). A public note with a problem is held
 back and reported; it never blocks the rest of the site.
 """
-import argparse, hashlib, json, re, shutil, subprocess, sys
+import argparse, hashlib, html, json, re, shutil, subprocess, sys
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from common import *
@@ -106,9 +106,12 @@ class Exporter:
                 url = self.asset(base, n['path'])
                 if ext in AUDIO: return f'<audio controls preload="none" src="{url}"></audio>'
                 return f'{"!" if embed else ""}[{label}]({url})'
-            other = resolve_note(base, n['path'], self.all)
-            if other['path'] not in self.routes: raise Held(f'links to private note [[{other["title"]}]]')
-            if embed: raise Held(f'embeds note [[{other["title"]}]]; change it to a link')
+            try: other = resolve_note(base, n['path'], self.all)
+            except Held: other = None
+            if other is None or other['path'] not in self.routes:
+                # Not public (yet): keep the words, drop the link. It becomes a link when the target is published.
+                return f'<span class="link-private" title="Not public yet">{html.escape(label)}</span>'
+            if embed: return f'[{label}](/{self.routes[other["path"]]}{anchor})'
             return f'[{label}](/{self.routes[other["path"]]}{anchor})'
 
         def md(m):
@@ -164,31 +167,22 @@ class Exporter:
             if r in seen or not re.fullmatch(r'[a-z0-9/-]+', r):
                 held.append({'path': path, 'reason': f'website address /{r} is already used or invalid'}); del self.routes[path]
             seen[r] = path
-        for n in [n for n in pool if n['path'] in self.routes]:
-            try:
-                output.append(self.render(n, notes_state.get(n['path'], {}), proposal, blocks))
-            except Held as e:
-                held.append({'path': n['path'], 'title': n['title'], 'reason': str(e)})
-                self.routes.pop(n['path'], None)
-        if held: self.recheck(held, output, proposal)
+        for attempt in range(5):
+            output, proposal, self.training, blocks, self.media = [], {}, [], [], {}
+            shutil.rmtree(self.stage, ignore_errors=True); self.stage.mkdir(parents=True)
+            newly = []
+            for n in [n for n in pool if n['path'] in self.routes]:
+                try:
+                    output.append(self.render(n, notes_state.get(n['path'], {}), proposal, blocks))
+                except Held as e:
+                    newly.append({'path': n['path'], 'title': n['title'], 'reason': str(e)})
+            if not newly: break
+            # Held notes leave the route table; a second pass turns links to them into plain text.
+            held += newly
+            for h in newly: self.routes.pop(h['path'], None)
         output.sort(key=lambda x: (x['date'], x['published']), reverse=True)
         self.write(output, blocks, proposal, held)
         return {'entries': len(output), 'held': held}
-
-    def recheck(self, held, output, proposal):
-        """A note that linked to a held-back note must be held back too."""
-        bad = {h['path'] for h in held}
-        changed = True
-        while changed:
-            changed = False
-            for rec in list(output):
-                links = set(re.findall(r'\]\(/([a-z0-9/-]+)', rec['_body']))
-                missing = [p for p, r in self.routes.items() if r in links and p in bad]
-                gone = [r for r in links if r not in self.routes.values() and not r.startswith('media')]
-                if missing or gone:
-                    output.remove(rec); bad.add(rec['_path']); proposal.pop(rec['_path'], None)
-                    held.append({'path': rec['_path'], 'title': rec['title'], 'reason': 'links to a note that is held back'})
-                    self.routes.pop(rec['_path'], None); changed = True
 
     def render(self, n, old, proposal, blocks):
         m = n['meta']; kind = m.get('type', 'writing'); r = self.routes[n['path']]
@@ -197,7 +191,8 @@ class Exporter:
         stamp = now(); digest = fingerprint(n)
         pub = old.get('published') or stamp
         updated = old.get('updated') if old.get('hash') == digest and old.get('updated') else stamp
-        occurred = str(m.get('date') or '')[:10]
+        started = m.get('created') if kind not in ('project', 'page') else None
+        occurred = str(m.get('date') or started or '')[:10]
         if kind == 'month' and re.match(r'\d{4}-\d{2}', n['title']): occurred = n['title'][:7] + '-01'
         date = occurred if re.fullmatch(r'\d{4}-\d{2}-\d{2}', occurred) else pub[:10]
         record = {'type': kind, 'title': n['title'], 'url': '/' + r, 'date': date, 'published': pub, 'updated': updated,

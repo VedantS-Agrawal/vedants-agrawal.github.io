@@ -607,3 +607,6 @@ table.race tr.longest td a { text-decoration-color: var(--line-strong); }
 .article-page .center > hr { display: none; }
 .site-header a, .site-footer a, .article-page .backlinks a { font-weight: 400; }
 .site-header .brand-name { font-weight: 500; }
+
+/* Links to notes that aren't public yet: the words stay, the link waits. */
+.link-private { color: var(--muted); border-bottom: 1px dotted var(--line-strong); cursor: help; }

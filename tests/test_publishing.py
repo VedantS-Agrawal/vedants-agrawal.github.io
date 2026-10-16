@@ -32,20 +32,27 @@ class PublicationTests(unittest.TestCase):
         titles = {e['title'] for e in (publisher.export(), self.entries())[1]}
         self.assertEqual(titles, {'Essay', 'Lab'})
 
-    def test_private_link_holds_back_only_that_note(self):
-        self.note('Writing/Public.md', 'See [[Secret]].', visibility='public')
+    def test_private_link_publishes_note_with_inert_text(self):
+        self.note('Writing/Public.md', 'See [[Secret|the secret]].', visibility='public')
         self.note('Writing/Secret.md', 'private words')
-        self.note('Writing/Other.md', 'fine', visibility='public')
         result = publisher.export()
-        self.assertEqual([h['path'] for h in result['held']], ['Writing/Public.md'])
-        self.assertEqual([e['title'] for e in self.entries()], ['Other'])
+        self.assertEqual(result['held'], [])
+        page = (self.root / 'content/notes/public.md').read_text()
+        self.assertIn('<span class="link-private" title="Not public yet">the secret</span>', page)
+        self.assertNotIn('/notes/secret', page)
         self.assertNotIn('private words', (self.root / 'content/site-data.json').read_text())
 
-    def test_link_to_held_note_is_held_too(self):
-        self.note('Writing/A.md', '[[B]]', visibility='public')
+    def test_link_to_held_note_becomes_inert(self):
+        self.note('Writing/A.md', 'see [[B]]', visibility='public')
         self.note('Writing/B.md', '<script>x</script>', visibility='public')
         held = {h['path'] for h in publisher.export()['held']}
-        self.assertEqual(held, {'Writing/A.md', 'Writing/B.md'})
+        self.assertEqual(held, {'Writing/B.md'})
+        self.assertIn('link-private', (self.root / 'content/notes/a.md').read_text())
+
+    def test_started_date_orders_notes(self):
+        self.note('Notes/Idea.md', 'x', 'concept', visibility='public', created='2023-02-01')
+        publisher.export()
+        self.assertEqual(self.entries()[0]['date'], '2023-02-01')
 
     def test_embedded_photo_is_stripped_of_metadata(self):
         from PIL import Image
@@ -107,7 +114,8 @@ class PublicationTests(unittest.TestCase):
         self.note('Writing/B.md', '<img src="/secret">', visibility='public')
         self.note('Writing/C.md', 'a < b is fine', visibility='public')
         held = {h['path'] for h in publisher.export()['held']}
-        self.assertEqual(held, {'Writing/A.md', 'Writing/B.md'})
+        self.assertEqual(held, {'Writing/B.md'})                  # raw HTML is held
+        self.assertNotIn('Secret', (self.root / 'content/notes/a.md').read_text().split('---')[-1].replace('x', ''))  # traversal → inert text
 
 
 if __name__ == '__main__': unittest.main()
