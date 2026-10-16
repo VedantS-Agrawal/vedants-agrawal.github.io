@@ -240,7 +240,8 @@
   ================================================================ */
   const page = (html, wide = false) => { app.innerHTML = `<div class="page-wrap${wide ? ' wide' : ''}">${html}</div>`; };
   const setTitle = t => { document.title = t ? `${t} · Vedant Agrawal` : 'Vedant Agrawal'; };
-  const head = (title, key, data, extra = '') => `<header class="page-head">${extra}<h1>${esc(title)}</h1><p class="desc">${esc((data.descriptions && data.descriptions[key]) || `[${title} description]`)}</p></header>`;
+  // key = null → no description line at all (Writing)
+  const head = (title, key, data, extra = '') => `<header class="page-head">${extra}<h1>${esc(title)}</h1>${key ? `<p class="desc">${esc((data.descriptions && data.descriptions[key]) || `[${title} description]`)}</p>` : ''}</header>`;
   const emptyState = t => `<p class="empty-state">${esc(t)}</p>`;
 
   /* tooltip (delegated, uses [data-tip] holding escaped HTML) */
@@ -445,7 +446,7 @@
     const hay = e => `${e.title} ${tagsOf(e).join(' ')} ${e.summary || ''}`.toLowerCase();
     const index = items.map(e => [e, hay(e)]);
     let q = new URLSearchParams(location.search).get('q') || '';
-    page(`${head('Writing', 'writing', data)}${items.length ? `<div class="toolbar"><label class="filter"><span class="sr-only">Filter writing by title, tag or summary</span><input type="search" id="w-q" placeholder="Filter" autocomplete="off" spellcheck="false" value="${esc(q)}"></label><span class="count" id="w-count" aria-live="polite"></span></div>` : ''}<div id="w-list"></div>`);
+    page(`${head('Writing', null, data)}${items.length ? `<div class="toolbar"><label class="filter"><span class="sr-only">Filter writing by title, tag or summary</span><input type="search" id="w-q" placeholder="Filter" autocomplete="off" spellcheck="false" value="${esc(q)}"></label><span class="count" id="w-count" aria-live="polite"></span></div>` : ''}<div id="w-list"></div>`);
     const row = e => `<li><a class="w-title" href="${href(e)}">${esc(e.title)}</a>${tagsOf(e).length ? `<span class="topics">${tagsOf(e).map(t => tagBtn(t, false, ' sm')).join('')}</span>` : ''}<time class="w-date" datetime="${e.date}">${esc(fdE(e))}</time></li>`;
     const draw = () => {
       const needle = q.trim().toLowerCase();

@@ -1,0 +1,9 @@
+{
+  "types": {
+    "pinned": "checkbox",
+    "visibility": "text",
+    "created": "date",
+    "updated": "date",
+    "published": "date"
+  }
+}

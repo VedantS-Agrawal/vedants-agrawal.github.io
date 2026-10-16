@@ -26,6 +26,10 @@
       "items": [
         {
           "type": "file",
+          "path": "Dashboards/Pinned.base"
+        },
+        {
+          "type": "file",
           "path": "Dashboards/Library.base"
         },
         {

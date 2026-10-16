@@ -1,0 +1,27 @@
+filters:
+  and:
+    - visibility == "public"
+    - type != "activity"
+views:
+  - type: table
+    name: Pinned
+    filters:
+      and:
+        - pinned == true
+    order:
+      - file.name
+      - pinned
+      - type
+      - file.folder
+  - type: table
+    name: Pin or unpin
+    order:
+      - pinned
+      - file.name
+      - type
+      - updated
+    sort:
+      - property: pinned
+        direction: DESC
+      - property: file.mtime
+        direction: DESC
