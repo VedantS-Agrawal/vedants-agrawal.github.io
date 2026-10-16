@@ -661,3 +661,95 @@ table.race tr.longest td a { text-decoration-color: var(--line-strong); }
 .pins-list .here a::before { content: ''; display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); margin: 0 6px 2px -10px; vertical-align: middle; }
 .note-meta .faint { color: var(--faint); }
 .pins-list a { font-weight: 400; background: none; }
+
+/* ------------------------------------------------------------------
+   Tags: index, tag pages, arrows to a tag's page
+------------------------------------------------------------------- */
+a.tag { display: inline-block; text-decoration: none; }
+a.tag.all { color: var(--faint); }
+a.tag.all:hover { color: var(--text); }
+.tg { display: inline-flex; align-items: baseline; gap: 3px; }
+.tg .go { font: 400 11px/1.6 var(--mono); color: var(--faint); transition: color var(--dur); }
+.tg .go:hover { color: var(--accent-text); }
+.tag-index { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 6px 32px; }
+.tag-index li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.tag-index .tag { font-size: 13px; padding: 0; color: var(--text); }
+.tag-index .n { font: 400 11px/1.6 var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
+.tag-sec { margin: 0 0 56px; }
+.tag-sec h2 { font: 500 15px/1.3 var(--font); letter-spacing: -.005em; margin: 0 0 12px; display: flex; align-items: baseline; gap: 10px; }
+.tag-sec h2 span { font: 400 11px/1 var(--mono); color: var(--faint); }
+.t-rows { list-style: none; margin: 0; padding: 0; }
+.t-rows li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 24px; align-items: baseline; padding: 14px 0; border-top: 1px solid var(--line); }
+.t-rows li:last-child { border-bottom: 1px solid var(--line); }
+.t-rows .w-title { grid-column: 1; overflow-wrap: anywhere; }
+.t-rows .w-date { grid-column: 2; grid-row: 1; }
+.t-sub, .t-sum { grid-column: 1 / -1; margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.t-sub { font: 400 12px/1.5 var(--mono); }
+.t-sum { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+@media (max-width: 640px) {
+  .t-rows .w-date { grid-column: 2; grid-row: 1; order: 0; }
+}
+
+/* ------------------------------------------------------------------
+   Photos: masonry columns, caption on hover/focus, lightbox
+------------------------------------------------------------------- */
+.photo-grid { list-style: none; margin: 0; padding: 0; columns: 3 10rem; column-gap: 8px; }
+.photo-grid li { break-inside: avoid; margin: 0 0 8px; }
+.shot { position: relative; display: block; width: 100%; padding: 0; border: 0; background: var(--wash); border-radius: 2px; overflow: hidden; color: var(--text); cursor: zoom-in; font: inherit; text-align: left; }
+.shot img { display: block; width: 100%; height: auto; min-height: 6rem; border-radius: 2px; transition: opacity var(--dur); }
+.shot:hover img { opacity: .92; }
+.shot:focus-visible { outline-offset: 2px; }
+.shot-cap { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 28px 10px 8px; background: linear-gradient(transparent, rgba(18, 10, 28, .82)); font-size: 12px; line-height: 1.4; opacity: 0; transition: opacity var(--dur); pointer-events: none; }
+.shot-cap time { font: 400 11px/1.4 var(--mono); color: var(--muted); white-space: nowrap; }
+.shot:hover .shot-cap, .shot:focus-visible .shot-cap { opacity: 1; }
+@media (hover: none) { .shot-cap { opacity: 1; } }
+
+html:has(dialog.lightbox[open]) { overflow: hidden; }
+.lightbox { padding: 0; border: 0; margin: 0; width: 100vw; max-width: none; height: 100vh; height: 100dvh; max-height: none; background: rgba(18, 10, 28, .97); color: var(--text); }
+.lightbox[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.lightbox::backdrop { background: rgba(18, 10, 28, .97); }
+.lb-top { display: flex; align-items: center; justify-content: space-between; padding: 14px var(--gutter); }
+.lb-count { font: 400 11px/1.4 var(--mono); letter-spacing: .02em; color: var(--faint); font-variant-numeric: tabular-nums; }
+.lb-btn { background: none; border: 0; padding: 4px 0; font: 400 12px/1.4 var(--mono); letter-spacing: .02em; text-transform: lowercase; color: var(--muted); transition: color var(--dur); }
+.lb-btn:hover { color: var(--text); }
+.lb-stage { position: relative; min-height: 0; display: grid; padding: 0 var(--gutter); }
+.lb-stage > img { width: 100%; height: 100%; object-fit: contain; min-height: 0; }
+.lb-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(18, 10, 28, .6); color: var(--text); font: 400 18px/1 var(--mono); transition: background var(--dur); }
+.lb-nav:hover { background: rgba(194, 179, 210, .18); }
+.lb-nav.prev { left: calc(var(--gutter) / 2); }
+.lb-nav.next { right: calc(var(--gutter) / 2); }
+.lb-cap { padding: 14px var(--gutter) 20px; max-width: calc(var(--col) + var(--gutter) * 2); width: 100%; margin: 0 auto; }
+.lb-t { margin: 0; display: flex; justify-content: space-between; gap: 16px; align-items: baseline; font: 500 15px/1.4 var(--font); }
+.lb-t time { font: 400 11px/1.4 var(--mono); color: var(--muted); white-space: nowrap; }
+.lb-sum { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.lb-cap .link { display: inline-block; margin-top: 8px; font-size: 13px; }
+
+/* ------------------------------------------------------------------
+   Training day card (reuses the tooltip element)
+------------------------------------------------------------------- */
+.tip.day-card { width: 17rem; max-width: calc(100vw - 16px); padding: 10px 12px; font-size: 12px; }
+.day-card .dc-y { margin-left: 6px; font: 400 11px var(--mono); color: var(--faint); }
+.day-card .dc-s { list-style: none; margin: 8px 0 0; padding: 0; }
+.day-card .dc-s li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
+.day-card .dc-t { margin-left: 4px; font: 400 11px var(--mono); color: var(--faint); }
+.day-card .dc-m { font: 400 11px/1.6 var(--mono); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.day-card .dc-n { margin: 6px 0 0; color: var(--muted); }
+.day-card .dc-w { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--line); display: grid; gap: 2px; }
+.day-card .dc-w div { display: flex; justify-content: space-between; gap: 12px; }
+.day-card .dc-w dt { font: 400 11px/1.6 var(--mono); color: var(--faint); text-transform: lowercase; }
+.day-card .dc-w dd { margin: 0; font: 400 11px/1.6 var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------------
+   Page transitions (cross-document View Transitions; Chromium/Safari 18.2+, ignored elsewhere)
+------------------------------------------------------------------- */
+.site-header { view-transition-name: site-header; }
+.page-head h1, .article-page .article-title { view-transition-name: page-title; }
+.intro-card { view-transition-name: intro-card; }
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+  ::view-transition-group(*) { animation-duration: 180ms; animation-timing-function: ease; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 180ms; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-header, .page-head h1, .article-page .article-title, .intro-card { view-transition-name: none; }
+}

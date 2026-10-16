@@ -22,7 +22,10 @@
       <a href="/stream/" data-nav="stream">Stream</a><a href="/writing/" data-nav="writing">Writing</a><a href="/library/" data-nav="library">Library</a><a href="/about.html" data-nav="about">About</a>
     </nav></div>
   </div></header>
-  <main id="app" tabindex="-1"><div class="page-wrap"><p class="loading">Loading…</p></div></main>
+  <main id="app" tabindex="-1"><div class="page-wrap"><script>
+    /* seed the page title before app.js renders, so the h1 can glide between pages (view transitions); app.js replaces it */
+    (function () { var t = document.title.replace(/ · Vedant Agrawal$/, ''); if (!t || t === 'Vedant Agrawal' || /^\d{4}-\d{2}$/.test(t)) return; var h = document.createElement('header'); h.className = 'page-head'; var e = document.createElement('h1'); e.textContent = t; h.appendChild(e); document.currentScript.parentNode.insertBefore(h, document.currentScript); })();
+  </script><p class="loading">Loading…</p></div></main>
   <footer class="site-footer"><div class="footer-inner"><span>© <span id="year"></span> Vedant Agrawal</span><nav aria-label="Footer"><a href="/archive/">Archive</a><a href="/index.xml">RSS</a></nav></div></footer>
   <noscript><p style="padding:1rem var(--gutter)">JavaScript is needed to browse this section. <a href="/about.html">About</a> · <a href="/archive/">Archive</a></p></noscript>
 </body>

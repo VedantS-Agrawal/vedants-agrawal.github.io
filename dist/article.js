@@ -45,6 +45,13 @@
     toggle.setAttribute('aria-pressed', String(on));
   });
 
+  /* Interactive reading layer (hover previews, stacked notes, linked-from, sidenotes, focus, graph) */
+  {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/notes.css';
+    const js = document.createElement('script'); js.src = '/notes.js'; js.defer = true;
+    document.head.append(css, js);
+  }
+
   /* Quartz backlinks -> quiet "Related" */
   const bl = document.querySelector('.backlinks > h3');
   if (bl) bl.textContent = 'Related';
