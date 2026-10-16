@@ -414,6 +414,9 @@ def build():
 
 
 def publish():
+    # Another publisher (the scheduled run, or a GitHub edit) may have pushed since; start from there.
+    # Generated files conflict trivially, so ours win; they're rebuilt right after anyway.
+    subprocess.run(['git', 'pull', '--rebase', '--autostash', '-X', 'theirs', '-q', 'origin', 'main'], cwd=ROOT, check=True)
     result = build()
     subprocess.run(['git', 'add', 'content', 'dist'], cwd=ROOT, check=True)
     if subprocess.run(['git', 'diff', '--cached', '--quiet'], cwd=ROOT).returncode:
