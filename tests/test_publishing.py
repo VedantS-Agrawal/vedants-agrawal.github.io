@@ -49,6 +49,12 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(held, {'Writing/B.md'})
         self.assertIn('link-private', (self.root / 'content/notes/a.md').read_text())
 
+    def test_hub_links_in_notes(self):
+        self.note('Writing/A.md', 'I [[Training|train]] and [read](/library/).', visibility='public')
+        publisher.export()
+        body = (self.root / 'content/notes/a.md').read_text()
+        self.assertIn('[train](/stream/training/)', body); self.assertIn('[read](/library/)', body)
+
     def test_started_date_orders_notes(self):
         self.note('Notes/Idea.md', 'x', 'concept', visibility='public', created='2023-02-01')
         publisher.export()

@@ -381,3 +381,20 @@
     })
     .catch(() => { host.innerHTML = '<p class="ap-note">Activity details unavailable</p>'; });
 })();
+
+/* Reading progress: a 2px orange line that fills as you read. */
+(() => {
+  const article = document.querySelector('article');
+  if (!article || article.scrollHeight < window.innerHeight * 1.4) return;
+  const bar = document.createElement('div'); bar.className = 'read-progress'; bar.setAttribute('aria-hidden', 'true');
+  document.body.append(bar);
+  let ticking = false;
+  const update = () => {
+    const rect = article.getBoundingClientRect();
+    const total = rect.height - window.innerHeight;
+    const done = total > 0 ? Math.min(1, Math.max(0, -rect.top / total)) : 1;
+    bar.style.transform = `scaleX(${done})`; ticking = false;
+  };
+  addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
+  addEventListener('resize', update); update();
+})();

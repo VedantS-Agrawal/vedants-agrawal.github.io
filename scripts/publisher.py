@@ -108,6 +108,8 @@ class Exporter:
                 return f'{"!" if embed else ""}[{label}]({url})'
             try: other = resolve_note(base, n['path'], self.all)
             except Held: other = None
+            if other is None and base.strip().lower() in HUBS:   # [[Training]], [[Library]] … → site sections
+                return f'[{label}]({HUBS[base.strip().lower()]})'
             if other is None or other['path'] not in self.routes:
                 # Not public (yet): keep the words, drop the link. It becomes a link when the target is published.
                 return f'<span class="link-private" title="Not public yet">{html.escape(label)}</span>'
@@ -121,6 +123,7 @@ class Exporter:
                 if scheme not in ('https', 'http', 'mailto'): raise Held(f'unsupported link {target}')
                 if bang: raise Held('remote image; save it into Media/Photos first')
                 return m.group(0)
+            if target in HUBS.values(): return m.group(0)               # [text](/stream/training/)
             return local(target, label, bool(bang))
 
         body = re.sub(r'(!?)\[([^\]]*)\]\(([^)]+)\)', md, body)
