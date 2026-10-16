@@ -2,9 +2,9 @@
 title: Cognitive Load Theory and its Applications for Learning
 type: literature
 date: '2022-11-02'
-published: '2026-10-16T15:09:21-05:00'
+published: '2026-10-16'
 updated: '2026-10-16'
-created: '2026-10-16T15:09:21-05:00'
+created: '2026-10-16'
 modified: '2026-10-16'
 ---
 
