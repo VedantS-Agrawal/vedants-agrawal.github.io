@@ -426,6 +426,8 @@ def fit_pass(limit, today, changed, errors):
                 data = download(fit_url(entry))
                 path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(data)
             except Exception as ex:
+                if 'daily limit' in str(ex).lower():   # COROS's own count is authoritative: stop for today, not an error
+                    quota['used'] = FIT_DAILY_CAP; break
                 entry['fit'] = {'downloaded': False, 'failedOn': today.isoformat(), 'error': str(ex)[:200]}
                 errors.append(f'{ident}: FIT {ex}'); save(ident, entry); continue
         try:
