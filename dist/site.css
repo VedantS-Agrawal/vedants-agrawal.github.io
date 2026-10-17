@@ -753,3 +753,30 @@ html:has(dialog.lightbox[open]) { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .site-header, .page-head h1, .article-page .article-title, .intro-card { view-transition-name: none; }
 }
+
+/* ------------------------------------------------------------------
+   Strength (activity lifts table, training-history section)
+------------------------------------------------------------------- */
+.lift-total, .ap-title .ap-sub { font: 400 11px/1.4 var(--mono); letter-spacing: .02em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lifts { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 32px 40px; margin: 0 0 56px; }
+.lift { min-width: 0; }
+.lift h4 { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 0 0 4px; padding-bottom: 6px; border-bottom: 1px solid var(--line-strong); font: 500 14px/1.4 var(--font); letter-spacing: -.005em; }
+.lift h4 span { flex: none; font: 400 11px/1.4 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.lift table { width: 100%; border-collapse: collapse; font: 400 12px/1.5 var(--mono); font-variant-numeric: tabular-nums; }
+.article-page .lift table th, .article-page .lift table td { padding: 5px 0; line-height: 1.5; border: 0; border-bottom: 1px solid var(--line); text-align: left; font-weight: 400; background: none; }
+.article-page .lift table th { width: 3.2rem; color: var(--muted); }
+.lift th small { margin-left: 4px; font-size: 10px; color: var(--faint); }
+.article-page .lift table tr.warm th, .article-page .lift table tr.warm td { color: var(--faint); }
+
+.str-multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 28px 32px; margin-top: 8px; }
+.str-multiples figure { margin: 0; min-width: 0; }
+.str-multiples figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font: 500 13px/1.4 var(--font); letter-spacing: -.005em; }
+.str-multiples figcaption span { flex: none; font: 400 11px/1.4 var(--mono); color: var(--accent-text); font-variant-numeric: tabular-nums; }
+.str-multiples .chart text.best { fill: var(--accent-text); }
+table.data.ex-table td:first-child, table.data.ex-table th:first-child { white-space: normal; }
+.bw-label { font: 400 11px/1.5 var(--mono); letter-spacing: .02em; color: var(--muted); margin: 0 0 4px; }
+.bw-label b { font-weight: 400; color: var(--text); }
+@media (max-width: 640px) {
+  .lifts, .str-multiples { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+}
+.legend .dot { background: var(--accent); width: 8px; height: 8px; border-radius: 50%; }
