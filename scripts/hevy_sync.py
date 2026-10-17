@@ -107,8 +107,10 @@ def update_status(**fields):
     if s != before: write_json(status_path(), s, True)
 
 def all_workouts():
+    """Public workout bodies, oldest first; a workout's `muscles` ({group: {primary, secondary}} set counts) rides along when known."""
     items = [read_json(p) for p in sorted(store().glob('*.json'))] if store().exists() else []
-    return sorted((e['public'] for e in items if e.get('public')), key=lambda p: (p.get('start') or 0, p['id']))
+    return sorted(({**e['public'], **({'muscles': e['muscles']} if e.get('muscles') else {})} for e in items if e.get('public')),
+                  key=lambda p: (p.get('start') or 0, p['id']))
 
 def save_workout(w):
     if not re.fullmatch(r'[0-9A-Za-z-]+', str(w.get('id', ''))): return False
@@ -229,6 +231,68 @@ def exercise_progress(workouts):
     return {k: {'sessions': len(v['sessions']), 'daily': v['daily'], 'best': v['best']} for k, v in out.items()}
 
 
+# ---------- muscles worked ----------
+
+SKIP_GROUPS = {'cardio', 'full_body', 'other'}       # not a region of the body
+PAGE_SIZE_TEMPLATES = 100                             # the API maximum for /exercise_templates
+
+def templates_path(): return vault() / '_System/hevy-templates.json'     # outside _System/hevy/, which holds one file per workout
+
+def template_ids(raw):
+    return {str(e['exercise_template_id']) for e in (raw.get('exercises') or []) if e.get('exercise_template_id')}
+
+def trim_template(t):
+    primary = str(t.get('primary_muscle_group') or '')
+    return {'title': str(t.get('title') or ''), 'primary': primary, 'secondary': [str(m) for m in (t.get('secondary_muscle_groups') or [])]}
+
+def refresh_templates(wanted, key):
+    """Cache of exercise templates ({id: {title, primary, secondary}}). Only ids not yet cached are fetched:
+    the paginated list first (a handful of requests), then single lookups for what the list lacks."""
+    cache = read_json(templates_path())
+    missing = {i for i in wanted if i not in cache}
+    if not missing: return cache
+    page = 1
+    while missing and page <= MAX_PAGES:
+        data = get('/exercise_templates', {'page': page, 'pageSize': PAGE_SIZE_TEMPLATES}, key)
+        for t in data.get('exercise_templates') or []:
+            if t.get('id') and str(t['id']) in missing: cache[str(t['id'])] = trim_template(t); missing.discard(str(t['id']))
+        if page >= int(data.get('page_count') or 1): break
+        page += 1
+    for ident in sorted(missing):
+        try: cache[ident] = trim_template(get(f'/exercise_templates/{urllib.parse.quote(ident, safe="")}', None, key))
+        except RuntimeError: continue          # unavailable (e.g. a deleted custom exercise): left uncached, tried again next time
+    write_json(templates_path(), cache, True)
+    return cache
+
+def muscles_of(raw, templates):
+    """{group: {'primary': n, 'secondary': n}} counted in working sets (warm-ups skipped) for one raw Hevy workout."""
+    out = {}
+    for e in raw.get('exercises') or []:
+        t = templates.get(str(e.get('exercise_template_id')))
+        if not t: continue
+        n = sum(1 for s in (e.get('sets') or []) if s.get('type') != 'warmup')
+        if not n: continue
+        for group, kind in [(t['primary'], 'primary')] + [(g, 'secondary') for g in t['secondary'] if g != t['primary']]:
+            if group and group not in SKIP_GROUPS:
+                o = out.setdefault(group, {'primary': 0, 'secondary': 0}); o[kind] += n
+    return out
+
+def attach_muscles(key):
+    """Write `muscles` into every stored workout (private store only). Returns the number of workouts updated."""
+    paths = sorted(store().glob('*.json')) if store().exists() else []
+    entries = [(p, read_json(p)) for p in paths]
+    wanted = set().union(*[template_ids((e.get('private') or {}).get('raw') or {}) for _, e in entries]) if entries else set()
+    templates = refresh_templates(wanted, key) if wanted else {}
+    changed = 0
+    for path, entry in entries:
+        raw = (entry.get('private') or {}).get('raw')
+        if not raw: continue
+        muscles = muscles_of(raw, templates)
+        if (entry.get('muscles') or {}) != muscles:
+            entry['muscles'] = muscles; write_json(path, entry, True); changed += 1
+    return changed
+
+
 # ---------- orchestration ----------
 
 def full_import(key):
@@ -262,6 +326,9 @@ def sync(full=False):
         else:
             changed = incremental(key, cursor)
             if len(list(store().glob('*.json'))) != count: changed |= full_import(key)   # drifted: reconcile
+        try: attach_muscles(key)
+        except RuntimeError as e: update_status(muscleError=str(e)[:200])     # the workouts themselves are unaffected
+        else: update_status(muscleError=None)
         workouts = all_workouts()
         matches = match_workouts(workouts, coros_activities(), read_json(matches_path()), note_ids())
         if matches != read_json(matches_path()): write_json(matches_path(), matches, True)

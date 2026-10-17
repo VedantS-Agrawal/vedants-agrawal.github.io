@@ -344,7 +344,30 @@ def strength_of(workouts):
     for title, o in top:
         series = [{'date': d, 'e1rmLb': v} for d, v in sorted(o['daily'].items())]
         exercises.append({'title': title, 'sessions': o['sessions'], 'best': o['best'], 'series': series})
-    return {'weekly': [weeks[k] for k in sorted(weeks)], 'exercises': exercises}
+    out = {'weekly': [weeks[k] for k in sorted(weeks)], 'exercises': exercises}
+    muscles = muscle_months(workouts)
+    if muscles: out['muscles'] = muscles; out['muscleSets'] = muscle_set_counts(workouts)
+    return out
+
+
+def muscle_months(workouts):
+    """{'YYYY-MM': {group: score}}: working sets where the group is primary count 1, secondary 0.5. Raw scores, not normalized."""
+    months = {}
+    for w in workouts:
+        for group, c in (w.get('muscles') or {}).items():
+            score = c.get('primary', 0) + 0.5 * c.get('secondary', 0)
+            if score:
+                m = months.setdefault(w['date'][:7], {}); m[group] = m.get(group, 0) + score
+    return {k: {g: round(v, 1) for g, v in sorted(months[k].items())} for k in sorted(months)}
+
+
+def muscle_set_counts(workouts):
+    """{'YYYY-MM': {group: [primarySets, secondarySets]}}: the raw counts behind each score, for tooltips."""
+    months = {}
+    for w in workouts:
+        for group, c in (w.get('muscles') or {}).items():
+            o = months.setdefault(w['date'][:7], {}).setdefault(group, [0, 0]); o[0] += c.get('primary', 0); o[1] += c.get('secondary', 0)
+    return {k: dict(sorted(months[k].items())) for k in sorted(months)}
 
 
 def day_of(value):

@@ -179,7 +179,17 @@
     const exercises = (Array.isArray(j.exercises) ? j.exercises : []).filter(e => e && e.title && Array.isArray(e.series) && e.series.length).map(e => ({
       title: String(e.title), sessions: Number(e.sessions) || e.series.length, best: e.best || null,
       series: e.series.filter(s => s && isDay(s.date) && Number.isFinite(Number(s.e1rmLb))).map(s => ({ date: s.date, v: Number(s.e1rmLb) })).sort((a, b) => a.date.localeCompare(b.date)) })).filter(e => e.series.length);
-    return weekly.length ? { weekly, exercises } : null;
+    const clean = o => {
+      const out = {};
+      Object.keys(o && typeof o === 'object' ? o : {}).filter(k => /^\d{4}-\d{2}$/.test(k)).sort().forEach(k => {
+        const m = {};
+        Object.keys(o[k] || {}).forEach(g => { const v = Array.isArray(o[k][g]) ? o[k][g] : Number(o[k][g]); if (Array.isArray(v) ? v.some(Number.isFinite) : v > 0) m[g] = v; });
+        if (Object.keys(m).length) out[k] = m;
+      });
+      return out;
+    };
+    const muscles = clean(j.muscles), muscleSets = clean(j.muscleSets);
+    return weekly.length ? { weekly, exercises, muscles, muscleSets } : null;
   });
   const loadBodyWeight = () => loadOptional('/data/weight.json').then(j => {
     const pts = j && Array.isArray(j.points) ? j.points.filter(p => p && isDay(p.date) && Number.isFinite(Number(p.deltaLb))).map(p => ({ date: p.date, v: Number(p.deltaLb) })).sort((a, b) => a.date.localeCompare(b.date)) : [];
@@ -847,6 +857,7 @@
       ${strength ? `<section class="t-section" aria-labelledby="t-str"><header><h2 id="t-str">Strength</h2><p class="cap" id="str-cap"></p></header>
         <p class="chart-h">Weekly volume</p><div class="chart" id="str-weekly"></div>
         <div class="legend"><span><i class="sw bar"></i>Week</span><span><i class="sw dash"></i>4-week average</span></div>
+        ${Object.keys(strength.muscles).length ? `<p class="chart-h">Muscles worked</p><div id="muscles"></div>` : ''}
         ${strength.exercises.length ? `<p class="chart-h">Estimated 1RM</p><div class="str-multiples" id="str-multi"></div>
         <div class="legend"><span><i class="sw line"></i>Best set each day</span><span><i class="sw dot"></i>All-time best</span></div>
         <p class="chart-h">Exercises</p><div class="scroll-x" id="str-table"></div>` : ''}</section>` : ''}
@@ -1235,6 +1246,93 @@
       });
       return `${s}</svg>`;
     };
+
+    /* ---------- Strength: monthly muscle map (front and back figures, ranked list) ---------- */
+    const MZ_LABEL = { abdominals: 'Abdominals', shoulders: 'Shoulders', biceps: 'Biceps', triceps: 'Triceps', forearms: 'Forearms', quadriceps: 'Quadriceps', hamstrings: 'Hamstrings', calves: 'Calves', glutes: 'Glutes', abductors: 'Abductors', adductors: 'Adductors', lats: 'Lats', upper_back: 'Upper back', traps: 'Traps', lower_back: 'Lower back', chest: 'Chest', neck: 'Neck', obliques: 'Obliques' };
+    const MZ_ALIAS = { obliques: 'abdominals' };
+    const mzName = g => MZ_LABEL[g] || g.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+    /* Right-hand half of each region in a 100 x 200 box; the left half is the same path mirrored about x = 50. */
+    const MZ_FRONT = {
+      neck: ['M50 22.5H54L55.5 29.5H50Z'],
+      shoulders: ['M66 32.5C72 31.5 77 35 77.5 41.5C77.5 46 75.5 50 73 53L66.5 49C65.5 43 65 37 66 32.5Z'],
+      chest: ['M50.8 33C56 31.5 62 32 65.2 34C65 40 65.5 45 65.5 48.5C61 53 55 53.5 50.8 51.5Z'],
+      abdominals: ['M50.8 54C55 55 60 54.5 62.5 53L62 78C59 81.5 54 82.5 50.8 82.5Z', 'M63.6 53C65.2 56 66.3 60 66.3 64L65.2 77C64.2 79 63.2 79.5 62.8 78.6Z'],
+      biceps: ['M69 54H77.5C79 62 79 68 78.5 75H71C70 68 69.5 61 69 54Z'],
+      forearms: ['M71.5 77H78.5C80 86 81 92 81.5 97H74.5C73 91 72 84 71.5 77Z'],
+      adductors: ['M50.8 90L54.6 92C55.2 103 54.6 114 54 124L50.8 118Z'],
+      quadriceps: ['M55.8 88C59.5 86.5 63.5 87 66 90C67 100 66 115 63.5 128H55C55.6 116 56 100 55.8 88Z'],
+      calves: ['M55 138C60 136 65 138 65.5 142C65 152 63.5 165 61.5 176H56.5C55.5 163 54.5 150 55 138Z'],
+    };
+    const MZ_BACK = {
+      neck: ['M50 22.5H54L55.5 29.5H50Z'],
+      traps: ['M50 25C55 26.5 61 29.5 65.5 33C62 37 56 41 50 45Z'],
+      shoulders: ['M66 32.5C72 31.5 77 35 77.5 41.5C77.5 46 75.5 50 73 53L66.5 49C65.5 43 65 37 66 32.5Z'],
+      upper_back: ['M50.8 46.5C56 42.5 61 39 65 37L66 46C60 50 55 52 50.8 52.5Z'],
+      lats: ['M66 47C67 55 65.5 63 61 71H55.5C55 63 53.5 57 52.5 54C58 53.5 62.5 51 66 47Z'],
+      lower_back: ['M50.8 58H54C55 63 55 68 54.5 77L50.8 79Z'],
+      triceps: ['M69 54H77.5C79 62 79 68 78.5 75H71C70 68 69.5 61 69 54Z'],
+      forearms: ['M71.5 77H78.5C80 86 81 92 81.5 97H74.5C73 91 72 84 71.5 77Z'],
+      abductors: ['M66.4 84C68.6 86 69.6 91 69 96C68 99 66.5 99 65.4 97Z'],
+      glutes: ['M50.8 80C56 78 63 80 65.6 85C66.5 91 64 97 58 98C54 98 51.5 95 50.8 92Z'],
+      hamstrings: ['M51.5 101C57 100 63 100.5 66 100C67 108 66 120 63.5 130H53C52 120 51.5 110 51.5 101Z'],
+      calves: ['M54.5 134C60 132.5 65 134 66 139C65.5 150 63.5 162 61.5 172H56.5C55 162 54 148 54.5 134Z'],
+    };
+    const MZ_MIRROR = 'matrix(-1 0 0 1 100 0)';
+    const MZ_DECOR = ['M50 82.5C56 81 63 83 66.5 88', 'M66 130C67 133 66 135 63 135.5H55C54.5 133 54 131 54 129', 'M56.5 176H61.5L62.5 186C62.5 190 59 191.5 57 190C56 188 56 183 56.5 176Z', 'M74.5 99C75 103 77 106 79.5 105.5C81 103 81.5 100 81.5 99'];
+    const mzFill = t => {
+      if (!(t > 0)) return 'none';
+      return t <= .5 ? `color-mix(in srgb, var(--series-dim) ${Math.round(Math.max(18, t * 200))}%, transparent)` : `color-mix(in srgb, var(--accent) ${Math.round((t - .5) * 200)}%, var(--series-dim))`;
+    };
+    const mzMonths = (() => {
+      const ks = Object.keys(strength ? strength.muscles : {}); if (!ks.length) return [];
+      const out = []; const end = today.slice(0, 7) > ks[ks.length - 1] ? today.slice(0, 7) : ks[ks.length - 1];
+      for (let m = ks[0]; m <= end; m = fromNum(dayNum(`${m}-01`) + 31).slice(0, 7)) out.push(m);
+      return out;
+    })();
+    const mzState = { i: mzMonths.length - 1 };
+    const mzData = () => {
+      const m = mzMonths[mzState.i], scores = {}, sets = {};
+      const raw = strength.muscles[m] || {}, counts = (strength.muscleSets || {})[m] || {};
+      Object.keys(raw).forEach(g => { const k = MZ_ALIAS[g] || g; scores[k] = (scores[k] || 0) + raw[g]; });
+      const prim = {};
+      Object.keys(counts).forEach(g => { const k = MZ_ALIAS[g] || g; const c = counts[g]; sets[k] = (sets[k] || 0) + c[0] + c[1]; prim[k] = (prim[k] || 0) + c[0]; });
+      Object.keys(scores).forEach(g => { if (sets[g] == null) { sets[g] = Math.round(scores[g]); prim[g] = null; } });
+      return { m, scores, sets, prim, max: Math.max(0, ...Object.values(scores)) };
+    };
+    const mzTip = (d, g) => `<b>${esc(mzName(g))}</b> · ${nf(d.sets[g] || 0, 0)} sets${d.prim[g] != null ? ` (${nf(d.prim[g], 0)} primary)` : ''}`;
+    const mzMonthLabel = m => fd(`${m}-01`, 'monY');
+    const mzView = (name, regions, d) => {
+      let s = `<svg class="mz-fig" viewBox="0 0 100 196" width="92" height="180" role="group" aria-label="${esc(`${name} view`)}"><ellipse class="mz-d" cx="50" cy="12.5" rx="7.6" ry="9.6"/>`;
+      s += MZ_DECOR.map(p => `<path class="mz-d" d="${p}"/><path class="mz-d" d="${p}" transform="${MZ_MIRROR}"/>`).join('');
+      Object.keys(regions).forEach(g => {
+        const sc = d.scores[g] || 0, t = d.max ? sc / d.max : 0;
+        const label = sc ? `${mzName(g)}, ${nf(d.sets[g] || 0, 0)} sets${d.prim[g] != null ? `, ${nf(d.prim[g], 0)} primary` : ''}` : `${mzName(g)}, no sets`;
+        s += `<g class="mz-r" data-g="${g}" tabindex="0" role="img" aria-label="${esc(label)}" fill="${mzFill(t)}" data-tip="${esc(mzTip(d, g))}">${regions[g].map(p => `<path d="${p}"/><path d="${p}" transform="${MZ_MIRROR}"/>`).join('')}</g>`;
+      });
+      return `${s}</svg>`;
+    };
+    const drawMuscles = () => {
+      const box = $('#muscles'); if (!box) return;
+      const d = mzData(), ranked = Object.keys(d.scores).sort((a, b) => d.scores[b] - d.scores[a] || a.localeCompare(b)).slice(0, 8);
+      const top = ranked.slice(0, 3).map(g => `${mzName(g)} ${nf(d.sets[g], 0)}`).join(', ');
+      const summary = ranked.length ? `${mzMonthLabel(d.m)}: most-worked muscle groups by sets: ${top}` : `${mzMonthLabel(d.m)}: no lifting`;
+      box.innerHTML = `<div class="mz-nav"><button type="button" class="mz-btn" data-mz="-1" aria-label="Previous month"${mzState.i <= 0 ? ' disabled' : ''}>←</button><span class="mz-month" aria-live="polite">${esc(mzMonthLabel(d.m))}</span><button type="button" class="mz-btn" data-mz="1" aria-label="Next month"${mzState.i >= mzMonths.length - 1 ? ' disabled' : ''}>→</button></div>
+        <div class="mz-body"><div class="mz-figs" aria-label="${esc(summary)}"><figure>${mzView('Front', MZ_FRONT, d)}<figcaption>Front</figcaption></figure><figure>${mzView('Back', MZ_BACK, d)}<figcaption>Back</figcaption></figure></div>
+        <ol class="mz-rank" aria-label="${esc(`Top muscle groups, ${mzMonthLabel(d.m)}`)}">${ranked.length ? ranked.map(g => `<li data-g="${g}"><span class="n">${esc(mzName(g))}</span><span class="b"><i style="width:${Math.max(3, Math.round(d.scores[g] / d.max * 100))}%"></i></span><span class="v">${nf(d.sets[g], 0)}</span></li>`).join('') : '<li class="none">No lifting this month</li>'}</ol></div>
+        <div class="legend"><span><i class="sw mz-scale"></i>fewer → more sets</span></div>`;
+    };
+    const wireMuscles = () => {
+      const box = $('#muscles'); if (!box) return;
+      bindTip(box);
+      box.addEventListener('click', e => {
+        const b = e.target.closest('[data-mz]'); if (!b || b.disabled) return;
+        mzState.i = Math.min(mzMonths.length - 1, Math.max(0, mzState.i + Number(b.dataset.mz))); drawMuscles();
+        const nb = box.querySelector(`[data-mz="${b.dataset.mz}"]:not([disabled])`) || box.querySelector('.mz-btn:not([disabled])'); nb && nb.focus();
+      });
+      box.addEventListener('focusin', e => { const r = e.target.closest && e.target.closest('.mz-r'); r && showTip(r.getAttribute('data-tip'), 0, 0, r.getBoundingClientRect()); });
+      box.addEventListener('focusout', e => { if (e.target.closest && e.target.closest('.mz-r')) hideTip(); });
+      drawMuscles();
+    };
     const MULTI = strength ? strength.exercises.slice(0, 6) : [];
     const drawMultiple = ex => w => {
       const left = 34, right = 8, top = 18, plotH = 62, bottom = 20, H = top + plotH + bottom, plotW = w - left - right;
@@ -1314,6 +1412,7 @@
       const tot = strength.weekly.reduce((a, k) => a + k.volumeLb, 0), ses = strength.weekly.reduce((a, k) => a + k.sessions, 0);
       $('#str-cap').textContent = `${ses} sessions · ${nf(tot, 0)} lb lifted since ${fd(strength.weekly[0].week, 'monY')}`;
       mount($('#str-weekly'), drawStrWeekly); bindTip($('#str-weekly'));
+      wireMuscles();
       const box = $('#str-multi');
       if (box) {
         box.innerHTML = MULTI.map((e, i) => `<figure><figcaption>${esc(e.title)}<span>${e.best ? `${nf(e.best.e1rmLb, 0)} lb` : ''}</span></figcaption><div class="chart" id="str-m${i}"></div></figure>`).join('');

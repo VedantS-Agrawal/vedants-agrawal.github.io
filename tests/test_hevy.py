@@ -170,6 +170,51 @@ class HevyTests(unittest.TestCase):
         with patch.object(h, 'get', FakeHevy([workout(1)])): h.sync(full=True)
         self.assertEqual(common.read_json(self.vault / '_System/hevy-matches.json'), {})
 
+    def with_templates(self, n, start=START):
+        w = workout(n, start)
+        w['exercises'][0]['exercise_template_id'] = 'T-BENCH'; w['exercises'][1]['exercise_template_id'] = 'T-PLANK'
+        return w
+
+    TEMPLATES = [{'id': 'T-BENCH', 'title': 'Bench Press (Barbell)', 'primary_muscle_group': 'chest', 'secondary_muscle_groups': ['triceps', 'shoulders']},
+                 {'id': 'T-PLANK', 'title': 'Plank', 'primary_muscle_group': 'abdominals', 'secondary_muscle_groups': []},
+                 {'id': 'T-CARDIO', 'title': 'Run', 'primary_muscle_group': 'cardio', 'secondary_muscle_groups': []}]
+
+    def test_muscles_count_working_sets_primary_and_secondary(self):
+        templates = {t['id']: h.trim_template(t) for t in self.TEMPLATES}
+        self.assertEqual(h.muscles_of(self.with_templates(1), templates), {
+            'chest': {'primary': 2, 'secondary': 0}, 'triceps': {'primary': 0, 'secondary': 2},
+            'shoulders': {'primary': 0, 'secondary': 2}, 'abdominals': {'primary': 1, 'secondary': 0}})
+        self.assertEqual(h.muscles_of(self.with_templates(1), {}), {})
+
+    def test_template_cache_fetches_only_unknown_ids(self):
+        self.connect()
+        calls = []
+        def fake(path, params=None, key=None, retries=3):
+            calls.append(path)
+            if path == '/exercise_templates': return {'page': 1, 'page_count': 1, 'exercise_templates': self.TEMPLATES}
+            raise RuntimeError('404')
+        with patch.object(h, 'get', fake):
+            first = h.refresh_templates({'T-BENCH', 'T-PLANK'}, 'secret-test-key')
+            self.assertEqual(first['T-BENCH']['primary'], 'chest'); self.assertEqual(calls, ['/exercise_templates'])
+            h.refresh_templates({'T-BENCH', 'T-PLANK'}, 'secret-test-key'); self.assertEqual(calls, ['/exercise_templates'])
+            h.refresh_templates({'T-BENCH', 'T-GONE'}, 'secret-test-key')
+        self.assertEqual(calls[1:], ['/exercise_templates', '/exercise_templates/T-GONE'])
+        self.assertNotIn('T-GONE', common.read_json(self.vault / '_System/hevy-templates.json'))
+
+    def test_muscle_scores_by_month_in_strength_json(self):
+        self.connect()
+        for n, day in ((1, 0), (2, 30)):          # 2026-10-11 and 2026-11-10
+            pub, raw = h.convert(self.with_templates(n, START + day * 86400))
+            common.write_json(self.vault / '_System/hevy' / f'{pub["id"]}.json', {'public': pub, 'private': {'raw': raw}})
+        def fake(path, params=None, key=None, retries=3): return {'page': 1, 'page_count': 1, 'exercise_templates': self.TEMPLATES}
+        with patch.object(h, 'get', fake): self.assertEqual(h.attach_muscles('secret-test-key'), 2)
+        with patch.object(h, 'get', fake): self.assertEqual(h.attach_muscles('secret-test-key'), 0)
+        strength = publisher.strength_of(h.all_workouts())
+        self.assertEqual(strength['muscles'], {'2026-10': {'abdominals': 1.0, 'chest': 2.0, 'shoulders': 1.0, 'triceps': 1.0},
+                                               '2026-11': {'abdominals': 1.0, 'chest': 2.0, 'shoulders': 1.0, 'triceps': 1.0}})
+        self.assertEqual(strength['muscleSets']['2026-10']['chest'], [2, 0]); self.assertEqual(strength['muscleSets']['2026-10']['triceps'], [0, 2])
+        self.assertNotIn('muscles', publisher.strength_of([h.convert(workout(3))[0]]))
+
 
 class HevyPublishTests(unittest.TestCase):
     def setUp(self):

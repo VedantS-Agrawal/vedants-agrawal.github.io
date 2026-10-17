@@ -219,6 +219,8 @@ Private store `_System/hevy/<id>.json`, status `_System/hevy-status.json` (`stat
 
 *Matching.* A Hevy workout that overlaps a COROS **strength** activity (start/end padded by 20 minutes) is attached to it through `_System/hevy-matches.json` (`{hevyId: corosId}`, sticky); the COROS store is never edited. Other COROS activities (cardio before or after the lifts) are not matched. Every other workout becomes `Training/Activities/YYYY-MM-DD <title>.md` with importer-owned properties `title, type: activity, id: hevy-<id>, date, sport: Strength, source_app: hevy, duration, volume_lb, sets`; the body and any other property are yours. Such notes are public by default like COROS activities (`group: strength`). A workout that already has a note is never matched later.
 
+*Muscles worked.* Each workout's exercises carry an `exercise_template_id`. Templates come from `GET /v1/exercise_templates?page&pageSize=100` (single `GET /v1/exercise_templates/{id}` for any id the list lacks) and are cached privately in `_System/hevy-templates.json` (`{templateId: {title, primary, secondary: []}}`; outside `_System/hevy/` because that folder holds one file per workout); only ids not yet cached are fetched. Muscle groups are Hevy's own (`abdominals, shoulders, biceps, triceps, forearms, quadriceps, hamstrings, calves, glutes, abductors, adductors, lats, upper_back, traps, lower_back, chest, neck`; `cardio`, `full_body`, `other` are ignored). Each store entry gains a top-level `muscles: {group: {primary, secondary}}` of working-set counts (warm-ups skipped), never published as is.
+
 *Estimated 1RM.* Epley `w x (1 + reps/30)` per working set (not warm-ups), 1 to 12 reps (a single is its own maximum); one value per exercise per day (the best).
 
 **Weight** (`scripts/weight.py`). Private store `_System/weight/YYYY-MM-DD.json` = `{kg, lb, source: "renpho|coros|csv", importedAt, private?: {readings: [...]}}`, status `_System/weight-status.json`. Per day the best source wins: `renpho` > `coros` > `csv`.
@@ -236,11 +238,13 @@ Private store `_System/hevy/<id>.json`, status `_System/hevy-status.json` (`stat
 { "weekly": [ { "week": "2026-10-12", "volumeLb": 34463, "sets": 18, "sessions": 2 } ],       // week = Monday
   "exercises": [ { "title": "Lat Pulldown (Cable)", "sessions": 11,                           // top 12 by sessions
                    "best": { "e1rmLb": 192.4, "weightLb": 148, "reps": 9, "date": "2026-10-15" },
-                   "series": [ { "date": "2026-10-15", "e1rmLb": 192.4 } ] } ] }
+                   "series": [ { "date": "2026-10-15", "e1rmLb": 192.4 } ] } ],
+  "muscles":    { "2026-10": { "chest": 3.0, "triceps": 6.0 } },     // per month with lifts: working sets, primary x 1 + secondary x 0.5; raw, not normalized
+  "muscleSets": { "2026-10": { "chest": [3, 0], "triceps": [2, 8] } } } // [primary sets, secondary sets] behind each score, for tooltips
 ```
 
 Absolute body weight, body composition, Hevy notes and descriptions appear in no public file (a test asserts it). Activity detail JSON gains `lifts: [{title, sets: [...]}]` for Hevy activities and for COROS activities with an attached workout; their `training.json` entries gain `lift: {volumeLb, sets, exercises}`. Hevy-only activities use the id `hevy-<uuid>` in `training.json` and `/data/activities/`.
 
-Front end: activity pages show a lifts table per exercise (warm-ups faint); `/stream/training/` has a **Strength** section (weekly volume, up to six e1RM small multiples on one shared time axis, a sortable exercise table) and a **Body weight** section (change line on a zero baseline). Both sections are absent when their data file is.
+Front end: activity pages show a lifts table per exercise (warm-ups faint); `/stream/training/` has a **Strength** section (weekly volume, up to six e1RM small multiples on one shared time axis, a sortable exercise table, and a monthly **muscle map**: front and back figures filled by each group's score for the selected month, transparent to `--series-dim` to `--accent` at the month's maximum, with a month selector and a ranked list) and a **Body weight** section (change line on a zero baseline). Both sections are absent when their data file is.
 
 Automation: `auto_sync.py` runs COROS, then `hevy_sync.sync()`, then `weight.sync()`; neither can stop the run, and any change they make counts toward publishing.
