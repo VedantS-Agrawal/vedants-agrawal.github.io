@@ -213,6 +213,10 @@ class HevyTests(unittest.TestCase):
         self.assertEqual(strength['muscles'], {'2026-10': {'abdominals': 1.0, 'chest': 2.0, 'shoulders': 1.0, 'triceps': 1.0},
                                                '2026-11': {'abdominals': 1.0, 'chest': 2.0, 'shoulders': 1.0, 'triceps': 1.0}})
         self.assertEqual(strength['muscleSets']['2026-10']['chest'], [2, 0]); self.assertEqual(strength['muscleSets']['2026-10']['triceps'], [0, 2])
+        days = strength['muscleDays']
+        self.assertEqual(sorted(days), ['2026-10-11', '2026-11-10'])
+        self.assertEqual(days['2026-10-11']['chest'], [2, 0]); self.assertEqual(days['2026-10-11']['triceps'], [0, 2])
+        self.assertEqual(sum(c[0] + c[1] for d in days for c in days[d].values()), sum(c[0] + c[1] for m in strength['muscleSets'].values() for c in m.values()))
         self.assertNotIn('muscles', publisher.strength_of([h.convert(workout(3))[0]]))
 
 

@@ -346,7 +346,7 @@ def strength_of(workouts):
         exercises.append({'title': title, 'sessions': o['sessions'], 'best': o['best'], 'series': series})
     out = {'weekly': [weeks[k] for k in sorted(weeks)], 'exercises': exercises}
     muscles = muscle_months(workouts)
-    if muscles: out['muscles'] = muscles; out['muscleSets'] = muscle_set_counts(workouts)
+    if muscles: out['muscles'] = muscles; out['muscleSets'] = muscle_set_counts(workouts); out['muscleDays'] = muscle_days(workouts)
     return out
 
 
@@ -368,6 +368,16 @@ def muscle_set_counts(workouts):
         for group, c in (w.get('muscles') or {}).items():
             o = months.setdefault(w['date'][:7], {}).setdefault(group, [0, 0]); o[0] += c.get('primary', 0); o[1] += c.get('secondary', 0)
     return {k: dict(sorted(months[k].items())) for k in sorted(months)}
+
+
+def muscle_days(workouts):
+    """{'YYYY-MM-DD': {group: [primarySets, secondarySets]}}: the same counts per day, so any date window can be summed exactly."""
+    days = {}
+    for w in workouts:
+        for group, c in (w.get('muscles') or {}).items():
+            if not (c.get('primary', 0) or c.get('secondary', 0)): continue
+            o = days.setdefault(w['date'], {}).setdefault(group, [0, 0]); o[0] += c.get('primary', 0); o[1] += c.get('secondary', 0)
+    return {k: dict(sorted(days[k].items())) for k in sorted(days)}
 
 
 def day_of(value):
