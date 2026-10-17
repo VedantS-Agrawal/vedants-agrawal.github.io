@@ -5,10 +5,11 @@ property is absent and its type defaults to public (activity, block, month). A p
 back and reported; it never blocks the rest of the site.
 """
 import argparse, hashlib, html, json, re, shutil, subprocess, sys
+from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from common import *
-import dates
+import dates, hevy_sync, weight
 
 PUBLIC_TYPES = ('activity', 'block', 'month')
 SKIP_FOLDERS = ('_System/', 'Templates/', 'Guide/')
@@ -136,14 +137,28 @@ class Exporter:
     # -- activities ----------------------------------------------------------
     def activity(self, n, record):
         ident = str(n['meta'].get('id', ''))
-        if not re.fullmatch(r'\d+', ident): raise Held('activity has no valid COROS id')
-        stored = read_json(vault() / '_System/activities' / f'{ident}.json')
-        if not stored.get('public'): raise Held('activity data missing from _System/activities')
-        pub = dict(stored['public'])
+        lifts = None
+        if re.fullmatch(r'\d+', ident):
+            stored = read_json(vault() / '_System/activities' / f'{ident}.json')
+            if not stored.get('public'): raise Held('activity data missing from _System/activities')
+            pub = dict(stored['public'])
+            detail = stored.get('detail') or {}
+            lifts = hevy_sync.lifts_for(ident)
+        elif re.fullmatch(r'hevy-[0-9A-Za-z-]+', ident):
+            stored = {}
+            lifts = read_json(vault() / '_System/hevy' / f'{ident[5:]}.json').get('public')
+            if not lifts: raise Held('workout data missing from _System/hevy')
+            pub = {'id': ident, 'date': lifts['date'], 'start': lifts.get('start'), 'sport': 'Strength', 'group': 'strength',
+                   'durationS': lifts.get('durationS'), 'title': lifts['title']}
+            pub = {k: v for k, v in pub.items() if v is not None}
+            detail = {'metrics': {'durationS': lifts['durationS']} if lifts.get('durationS') else {}}
+        else: raise Held('activity has no valid COROS or Hevy id')
         pub.update(url=record['url'], hasNote=bool(n['body'].strip()), hasAudio='<audio' in record['_body'])
-        detail = stored.get('detail') or {}
+        if lifts:
+            pub['lift'] = {'volumeLb': lifts['volumeLb'], 'sets': lifts['setCount'], 'exercises': len(lifts['exercises'])}
         data = {k: pub.get(k) for k in ('id', 'sport', 'group', 'date', 'title')}
         data.update(metrics=detail.get('metrics') or {}, laps=detail.get('laps') or [])
+        if lifts: data['lifts'] = lifts['exercises']
         if stored.get('series'): data['series'] = stored['series']
         (self.stage / 'data/activities').mkdir(parents=True, exist_ok=True)
         (self.stage / 'data/activities' / f'{ident}.json').write_text(json.dumps(data, separators=(',', ':')))
@@ -294,6 +309,11 @@ class Exporter:
             days = [d for d in days if len(d) > 1]
             (self.stage / 'data').mkdir(exist_ok=True)
             (self.stage / 'data/wellness.json').write_text(json.dumps({'coverage': {'start': days[0]['date'] if days else None, 'end': days[-1]['date'] if days else None}, 'days': days}, separators=(',', ':')))
+        (self.stage / 'data').mkdir(exist_ok=True)
+        workouts = hevy_sync.all_workouts()
+        if workouts: (self.stage / 'data/strength.json').write_text(json.dumps(strength_of(workouts), separators=(',', ':')))
+        series = weight.days()
+        if len(series) >= 2: (self.stage / 'data/weight.json').write_text(json.dumps(weight.trend(series), separators=(',', ':')))
         training = {'coverage': {'start': sync.get('coverageStart'), 'end': sync.get('coverageEnd'), 'lastSync': sync.get('lastSync')},
                     'blocks': sorted(blocks, key=lambda b: b['start']),
                     'activities': sorted(self.training, key=lambda a: (a.get('date', ''), a.get('start') or 0), reverse=True)}
@@ -308,6 +328,23 @@ class Exporter:
         backup = LOCAL / 'previous-export'; shutil.rmtree(backup, ignore_errors=True)
         if (ROOT / 'content').exists(): shutil.move(str(ROOT / 'content'), backup)
         shutil.move(str(self.stage), ROOT / 'content')
+
+
+def strength_of(workouts):
+    """Public strength summary: weekly volume and per-exercise estimated 1RM trends. Built from the private Hevy store."""
+    weeks = {}
+    for w in workouts:
+        d = date.fromisoformat(w['date']); monday = (d - timedelta(days=d.weekday())).isoformat()
+        o = weeks.setdefault(monday, {'week': monday, 'volumeLb': 0.0, 'sets': 0, 'sessions': 0})
+        o['volumeLb'] += w.get('volumeLb') or 0; o['sets'] += w.get('setCount') or 0; o['sessions'] += 1
+    for o in weeks.values(): o['volumeLb'] = round(o['volumeLb'])
+    progress = hevy_sync.exercise_progress(workouts)
+    top = sorted(progress.items(), key=lambda kv: (-kv[1]['sessions'], kv[0]))[:12]
+    exercises = []
+    for title, o in top:
+        series = [{'date': d, 'e1rmLb': v} for d, v in sorted(o['daily'].items())]
+        exercises.append({'title': title, 'sessions': o['sessions'], 'best': o['best'], 'series': series})
+    return {'weekly': [weeks[k] for k in sorted(weeks)], 'exercises': exercises}
 
 
 def day_of(value):

@@ -218,6 +218,36 @@
     return `<h3 class="ap-title">Splits</h3><div class="splits-wrap"><table class="data"><caption class="sr-only">Splits</caption><thead><tr>${cols.map(c => `<th scope="col"${c[2] ? '' : ''}>${c[0]}</th>`).join('')}</tr></thead><tbody>${laps.map(l => `<tr>${cols.map(c => `<td>${c[1](l)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
   };
 
+  /* Strength: one small table per exercise (set · reps × lb). Warm-ups are faint and left out of the totals. */
+  const liftSet = s => {
+    const w = has(s.weightLb) && s.weightLb > 0 ? `${nf(s.weightLb, 1)} lb` : '';
+    const parts = [];
+    if (has(s.reps)) parts.push(w ? `${s.reps} × ${w}` : `${s.reps} reps`);
+    else if (w) parts.push(w);
+    if (has(s.durationS)) parts.push(fmtClock(s.durationS));
+    if (has(s.distanceMi)) parts.push(`${nf(s.distanceMi, 2)} mi`);
+    return parts.join(' · ') || '—';
+  };
+  const liftsBlock = lifts => {
+    if (!Array.isArray(lifts) || !lifts.length) return '';
+    const working = s => s.type !== 'warmup';
+    const all = lifts.flatMap(e => e.sets || []).filter(working);
+    const volume = all.reduce((a, s) => a + (s.weightLb && s.reps ? s.weightLb * s.reps : 0), 0);
+    const top = e => (e.sets || []).filter(s => working(s) && s.weightLb > 0 && s.reps).sort((a, b) => b.weightLb - a.weightLb || b.reps - a.reps)[0];
+    const label = s => ({ warmup: 'W', failure: 'F', dropset: 'D' })[s.type] || '';
+    const one = e => {
+      let n = 0;
+      const rows = (e.sets || []).map(s => {
+        const cls = working(s) ? '' : ' class="warm"';
+        const mark = working(s) ? ++n : 'W';
+        return `<tr${cls}><th scope="row">${mark}${working(s) && label(s) ? `<small>${label(s)}</small>` : ''}</th><td>${esc(liftSet(s))}</td></tr>`;
+      }).join('');
+      const t = top(e);
+      return `<section class="lift"><h4>${esc(e.title)}${t ? `<span>${esc(liftSet(t))}</span>` : ''}</h4><table><caption class="sr-only">${esc(e.title)} sets</caption><tbody>${rows}</tbody></table></section>`;
+    };
+    return `<h3 class="ap-title">Lifts<span class="lift-total">${all.length} sets · ${nf(volume, 0)} lb</span></h3><div class="lifts">${lifts.map(one).join('')}</div>`;
+  };
+
   /* ---------------- charts ---------------- */
   const movingAvg = (arr, win) => {
     const half = Math.floor(win / 2);
@@ -390,7 +420,7 @@
       const date = String(a.date || '').slice(0, 10);
       const block = training && Array.isArray(training.blocks) && date ? training.blocks.find(b => b && b.start <= date && date <= b.end) : null;
       const hasSeries = a.series && Array.isArray(a.series.t) && a.series.t.length > 1;
-      host.innerHTML = `<div class="ap-head"><span>${esc(a.sport || '')}${date ? ` · ${esc(fmtDate(date))}` : ''}</span><span>${block ? `<a href="${urlHref(block.url || '')}">Training block: ${esc(block.title)}</a> · ` : ''}<a href="/stream/training/">Training history →</a></span></div>${metricGrid(m, group)}<div id="ap-charts"></div>${hasSeries ? '' : '<p class="ap-note">Detailed samples pending</p>'}${splitsTable(a.laps, group)}`;
+      host.innerHTML = `<div class="ap-head"><span>${esc(a.sport || '')}${date ? ` · ${esc(fmtDate(date))}` : ''}</span><span>${block ? `<a href="${urlHref(block.url || '')}">Training block: ${esc(block.title)}</a> · ` : ''}<a href="/stream/training/">Training history →</a></span></div>${metricGrid(m, group)}<div id="ap-charts"></div>${hasSeries || (Array.isArray(a.lifts) && a.lifts.length && !a.series) ? '' : '<p class="ap-note">Detailed samples pending</p>'}${splitsTable(a.laps, group)}${liftsBlock(a.lifts)}`;
       if (hasSeries && !chartBlock(host.querySelector('#ap-charts'), a.series, group)) host.querySelector('#ap-charts').innerHTML = '<p class="ap-note">Detailed samples pending</p>';
     })
     .catch(() => { host.innerHTML = '<p class="ap-note">Activity details unavailable</p>'; });

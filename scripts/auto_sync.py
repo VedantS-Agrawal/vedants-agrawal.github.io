@@ -1,7 +1,7 @@
 """One scheduled laptop run: COROS sync, then publish if anything public changed."""
 import fcntl, sys
 from common import LOCAL, now, read_json
-import coros_sync, dates, publisher
+import coros_sync, dates, hevy_sync, publisher, weight
 
 def run():
     LOCAL.mkdir(parents=True, exist_ok=True)
@@ -9,6 +9,10 @@ def run():
         try: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError: return 'Another sync is already running'
         changed = coros_sync.sync()
+        # Strength and weight are extras: a failure is recorded in their status files and never stops the run.
+        for step in (hevy_sync.sync, weight.sync):
+            try: changed += step()
+            except Exception as e: print(now(), f'{step.__module__} failed: {type(e).__name__}', file=sys.stderr)
         dates.stamp()
         if not (LOCAL / 'auto-publish-enabled').exists():
             publisher.export()

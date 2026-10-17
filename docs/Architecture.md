@@ -202,3 +202,45 @@ There is no project type. Work like the radiology tools lives as ordinary notes 
 New app-shell routes: `/photos/` (gallery of `type: photo` entries; each has `images: ["/media/…webp"]`, `summary`, `date`) and `/tags/` + `/tags/<tag>/` (one shell per tag in use).
 
 Auto-publish: the scheduled run publishes when COROS changed **or** any public note is ready/changed — so a photo note made on the phone goes live on the next run.
+
+## 11. Strength and body weight
+
+**Hevy** (`scripts/hevy_sync.py`, read-only, API key in `.local/hevy.key` written by `scripts/set_hevy_key.sh`). Endpoints used: `GET /v1/workouts/count`, `GET /v1/workouts?page&pageSize` (page size is capped at 10), `GET /v1/workouts/events?since=` (updated and deleted workouts). The first run reads every page; later runs read events since the stored cursor, and fall back to a full read if the local count drifts from `/workouts/count`. Without a key the sync does nothing and the status reads `hevy: not connected`.
+
+Private store `_System/hevy/<id>.json`, status `_System/hevy-status.json` (`state`, `lastSync`, `cursor`, `count`, `matched`, `lastError`):
+
+```jsonc
+{ "importedAt": "ISO",
+  "public": { "id": "uuid", "title": "Lower", "date": "2026-10-16", "start": 1791764137, "end": 1791767612, "durationS": 3475,
+              "exercises": [ { "title": "Bench Press (Barbell)", "sets": [ { "type": "warmup|normal|failure|dropset", "reps": 8, "weightLb": 132.3, "distanceMi": 0.5, "durationS": 60 } ] } ],
+              "volumeLb": 31095.0, "setCount": 15 },          // volume and setCount skip warm-ups; weights are kg x 2.20462, 1 decimal
+  "private": { "raw": { /* the Hevy response: descriptions, notes, routine ids */ } } }
+```
+
+*Matching.* A Hevy workout that overlaps a COROS **strength** activity (start/end padded by 20 minutes) is attached to it through `_System/hevy-matches.json` (`{hevyId: corosId}`, sticky); the COROS store is never edited. Other COROS activities (cardio before or after the lifts) are not matched. Every other workout becomes `Training/Activities/YYYY-MM-DD <title>.md` with importer-owned properties `title, type: activity, id: hevy-<id>, date, sport: Strength, source_app: hevy, duration, volume_lb, sets`; the body and any other property are yours. Such notes are public by default like COROS activities (`group: strength`). A workout that already has a note is never matched later.
+
+*Estimated 1RM.* Epley `w x (1 + reps/30)` per working set (not warm-ups), 1 to 12 reps (a single is its own maximum); one value per exercise per day (the best).
+
+**Weight** (`scripts/weight.py`). Private store `_System/weight/YYYY-MM-DD.json` = `{kg, lb, source: "renpho|coros|csv", importedAt, private?: {readings: [...]}}`, status `_System/weight-status.json`. Per day the best source wins: `renpho` > `coros` > `csv`.
+- `coros`: `queryUserInfo` (`Weight: 80.1 kg`), at most once a day; a new day always writes a file, an existing day changes only if the value moved.
+- `csv`: any `*.csv` in `_System/imports/renpho/` (README created there), read once per file hash. Date and weight columns are found by header; the unit comes from the header (`kg`/`lb`) or a unit column, else kg.
+- `renpho` (experimental): the RENPHO Health cloud API as documented by the open-source clients forkerer/RenphoGarminSync-CLI and jegork/renpho-mcp. POST `https://cloud.renpho.com/<path>` with `{"encryptData": base64(AES-128-ECB(json))}` (the key is a constant of the app); success is `{code: 101, data: <encrypted>}`. Calls: `renpho-aggregation/user/login`, `renpho-aggregation/device/count`, `RenphoHealth/scale/queryAllMeasureDataList` (200 per page, only rows whose `bUserId` is the account). Weight unit per row (`weightUnit` 1 kg, 2 lb). The email is in `.local/renpho.json` (`{email}` only), the password in the macOS Keychain (service `renpho-personal-site`, set with `scripts/set_renpho_login.sh`); it is never written to a file or printed. At most one attempt per 6 hours. Body-fat, muscle and the other composition values are stored under `private.readings` only. Any failure (login, decryption, schema change) is recorded in `lastError` and the other sources carry on.
+
+**Public outputs** (built by the publisher; `weight.json` is written with 2 or more days, `strength.json` with any workout):
+
+```jsonc
+// /data/weight.json: TREND ONLY. 7-day exponential smoothing (alpha 0.25 per day, gaps compound); deltaLb = smoothed value minus the first day's.
+{ "start": "2026-08-21", "points": [ { "date": "2026-08-21", "deltaLb": 0.0 }, { "date": "2026-08-22", "deltaLb": -0.3 } ] }
+
+// /data/strength.json
+{ "weekly": [ { "week": "2026-10-12", "volumeLb": 34463, "sets": 18, "sessions": 2 } ],       // week = Monday
+  "exercises": [ { "title": "Lat Pulldown (Cable)", "sessions": 11,                           // top 12 by sessions
+                   "best": { "e1rmLb": 192.4, "weightLb": 148, "reps": 9, "date": "2026-10-15" },
+                   "series": [ { "date": "2026-10-15", "e1rmLb": 192.4 } ] } ] }
+```
+
+Absolute body weight, body composition, Hevy notes and descriptions appear in no public file (a test asserts it). Activity detail JSON gains `lifts: [{title, sets: [...]}]` for Hevy activities and for COROS activities with an attached workout; their `training.json` entries gain `lift: {volumeLb, sets, exercises}`. Hevy-only activities use the id `hevy-<uuid>` in `training.json` and `/data/activities/`.
+
+Front end: activity pages show a lifts table per exercise (warm-ups faint); `/stream/training/` has a **Strength** section (weekly volume, up to six e1RM small multiples on one shared time axis, a sortable exercise table) and a **Body weight** section (change line on a zero baseline). Both sections are absent when their data file is.
+
+Automation: `auto_sync.py` runs COROS, then `hevy_sync.sync()`, then `weight.sync()`; neither can stop the run, and any change they make counts toward publishing.

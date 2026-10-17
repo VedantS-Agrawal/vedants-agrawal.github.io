@@ -116,6 +116,7 @@
     avgHr: (a.avgHr ?? a.avgHeartRate) == null ? null : Number(a.avgHr ?? a.avgHeartRate),
     load: a.load == null ? null : Number(a.load),
     title: a.title || '',
+    lift: a.lift && Number.isFinite(Number(a.lift.sets)) ? { volumeLb: Number(a.lift.volumeLb) || 0, sets: Number(a.lift.sets) || 0 } : null,
   });
   const actName = a => (a.group === 'other' || !GROUP_LABEL[a.group] ? a.sport : GROUP_LABEL[a.group]);
   const actSort = (a, b) => b.date.localeCompare(a.date) || b.start - a.start;
@@ -168,6 +169,25 @@
       return days.length ? { days, map: new Map(days.map(d => [d.date, d])) } : null;
     } catch { return null; }
   })());
+  /* ---- strength and body-weight trend (optional; a 404 just means "none") ---- */
+  const loadOptional = url => (async () => {
+    try { const r = await fetch(url, { cache: 'no-cache' }); return r.ok ? await r.json() : null; } catch { return null; }
+  })();
+  const loadStrength = () => loadOptional('/data/strength.json').then(j => {
+    if (!j || !Array.isArray(j.weekly)) return null;
+    const weekly = j.weekly.filter(w => w && isDay(w.week)).map(w => ({ week: w.week, volumeLb: Number(w.volumeLb) || 0, sets: Number(w.sets) || 0, sessions: Number(w.sessions) || 0 })).sort((a, b) => a.week.localeCompare(b.week));
+    const exercises = (Array.isArray(j.exercises) ? j.exercises : []).filter(e => e && e.title && Array.isArray(e.series) && e.series.length).map(e => ({
+      title: String(e.title), sessions: Number(e.sessions) || e.series.length, best: e.best || null,
+      series: e.series.filter(s => s && isDay(s.date) && Number.isFinite(Number(s.e1rmLb))).map(s => ({ date: s.date, v: Number(s.e1rmLb) })).sort((a, b) => a.date.localeCompare(b.date)) })).filter(e => e.series.length);
+    return weekly.length ? { weekly, exercises } : null;
+  });
+  const loadBodyWeight = () => loadOptional('/data/weight.json').then(j => {
+    const pts = j && Array.isArray(j.points) ? j.points.filter(p => p && isDay(p.date) && Number.isFinite(Number(p.deltaLb))).map(p => ({ date: p.date, v: Number(p.deltaLb) })).sort((a, b) => a.date.localeCompare(b.date)) : [];
+    return pts.length >= 2 ? pts : null;
+  });
+  const MINUS = '\u2212';
+  const signed = (v, d = 1) => { const r = Math.round(Math.abs(v) * 10 ** d) / 10 ** d; return r === 0 ? '0' : `${v < 0 ? MINUS : '+'}${nf(r, d)}`; };
+  const fmtK = v => (v >= 1000 ? `${nf(v / 1000, v % 1000 ? 1 : 0)}k` : nf(v, 0));
   const fmtSleep = s => { let h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); if (m === 60) { h++; m = 0; } return `${h}h${pad(m)}`; };
   const wellLine = w => {
     const p = [];
@@ -771,7 +791,7 @@
 
   const renderTraining = async (data, entries) => {
     setTitle('Training history');
-    const [t, well] = await Promise.all([loadTraining(data, entries), loadWellness()]);
+    const [t, well, strength, bw] = await Promise.all([loadTraining(data, entries), loadWellness(), loadStrength(), loadBodyWeight()]);
     const acts = t.activities, blocks = t.blocks, cov = t.coverage;
     const crumb = '<a class="crumb" href="/stream/">← stream</a>';
     if (!acts.length) { page(head('Training history', 'training', data, crumb) + emptyState('No training data yet.'), true); return; }
@@ -824,6 +844,14 @@
         <p class="chart-h">Nightly HRV</p><div class="chart" id="rec-hrv"></div>
         <div class="legend"><span><i class="sw line"></i>HRV</span><span><i class="sw band"></i>Normal range</span></div>
         <p class="chart-h">Resting heart rate</p><div class="chart" id="rec-rhr"></div></section>` : ''}
+      ${strength ? `<section class="t-section" aria-labelledby="t-str"><header><h2 id="t-str">Strength</h2><p class="cap" id="str-cap"></p></header>
+        <p class="chart-h">Weekly volume</p><div class="chart" id="str-weekly"></div>
+        <div class="legend"><span><i class="sw bar"></i>Week</span><span><i class="sw dash"></i>4-week average</span></div>
+        ${strength.exercises.length ? `<p class="chart-h">Estimated 1RM</p><div class="str-multiples" id="str-multi"></div>
+        <div class="legend"><span><i class="sw line"></i>Best set each day</span><span><i class="sw dot"></i>All-time best</span></div>
+        <p class="chart-h">Exercises</p><div class="scroll-x" id="str-table"></div>` : ''}</section>` : ''}
+      ${bw ? `<section class="t-section" aria-labelledby="t-bw"><header><h2 id="t-bw">Body weight</h2><p class="cap">Smoothed trend, change only</p></header>
+        <p class="bw-label" id="bw-label"></p><div class="chart" id="bw-chart"></div></section>` : ''}
       <section class="t-section" aria-labelledby="t-mix"><header><h2 id="t-mix">Sport mix</h2><p class="cap">By time</p></header><div id="mix"></div></section>
       <section class="t-section" aria-labelledby="t-mo"><header><h2 id="t-mo">Monthly totals</h2></header><div id="months"></div></section>
       <section class="t-section" id="activities" aria-labelledby="t-list"><header><h2 id="t-list">Activities</h2><p class="cap" id="list-count" aria-live="polite"></p></header><div id="act-list"></div></section>`, true);
@@ -831,6 +859,7 @@
     /* ---------- day card: date, that day's sessions and wellness (hover, focus, tap) ---------- */
     let ribMap = new Map();
     const allDays = dayMap(acts);
+    const liftSum = a => (a.lift && a.lift.sets ? `${a.lift.sets} sets${a.lift.volumeLb ? ` \u00b7 ${fmtK(a.lift.volumeLb)} lb` : ''}` : '');
     const clock = a => (a.start ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(a.start * 1000)) : '');
     const sessionsOf = d => (allDays.get(d) ? allDays.get(d).acts.slice().sort((a, b) => a.start - b.start) : []);
     const wellRows = w => {
@@ -845,14 +874,14 @@
     const dayCardHtml = d => {
       const ss = sessionsOf(d), wr = wellRows(well && well.map.get(d));
       const body = ss.length
-        ? `<ul class="dc-s">${ss.map(a => `<li><span>${esc(actName(a))}${clock(a) ? ` <span class="dc-t">${esc(clock(a))}</span>` : ''}</span><span class="dc-m">${esc([a.distanceKm > 0 ? distStr(a.group, a.distanceKm) : '', a.durationS ? fmtDur(a.durationS) : ''].filter(Boolean).join(' · '))}</span></li>`).join('')}</ul>`
+        ? `<ul class="dc-s">${ss.map(a => `<li><span>${esc(actName(a))}${clock(a) ? ` <span class="dc-t">${esc(clock(a))}</span>` : ''}</span><span class="dc-m">${esc([a.distanceKm > 0 ? distStr(a.group, a.distanceKm) : '', a.durationS ? fmtDur(a.durationS) : '', liftSum(a)].filter(Boolean).join(' · '))}</span></li>`).join('')}</ul>`
         : `<p class="dc-n">${inCoverage(cov, d) ? 'No training' : 'Not synced'}</p>`;
       return `<b>${esc(fd(d, 'day'))}</b><span class="dc-y">${esc(d.slice(0, 4))}</span>${body}${wr.length ? `<dl class="dc-w">${wr.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}`;
     };
     /* plain-text version for the screen-reader live region */
     const dayTip = d => {
       const ss = sessionsOf(d), wr = wellRows(well && well.map.get(d));
-      const parts = ss.length ? [ss.map(a => [actName(a), clock(a), a.distanceKm > 0 ? distStr(a.group, a.distanceKm) : '', a.durationS ? fmtDur(a.durationS) : ''].filter(Boolean).join(' ')).join('; ')] : [inCoverage(cov, d) ? 'no training' : 'not synced'];
+      const parts = ss.length ? [ss.map(a => [actName(a), clock(a), a.distanceKm > 0 ? distStr(a.group, a.distanceKm) : '', a.durationS ? fmtDur(a.durationS) : '', liftSum(a)].filter(Boolean).join(' ')).join('; ')] : [inCoverage(cov, d) ? 'no training' : 'not synced'];
       if (wr.length) parts.push(wr.map(([k, v]) => `${k} ${v}`).join(', '));
       return { text: `${fd(d, 'day')}: ${parts.join('. ')}` };
     };
@@ -1166,6 +1195,103 @@
       $('#act-list').innerHTML = `${S.range ? `<div class="filter-note"><button type="button" class="chip" id="clear-range" aria-label="Clear date filter">${esc(S.range.label)} ✕</button></div>` : ''}${list.length ? `<table class="data"><caption class="sr-only">Activities</caption><thead><tr>${COLS.map(c => `<th scope="col" class="${c.c || ''}" aria-sort="${S.sortKey === c.k ? (S.sortDir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" data-sort="${c.k}">${c.l}</button></th>`).join('')}</tr></thead><tbody>${shown.map(a => `<tr><td>${esc(fd(a.date))}</td><td class="l"><a href="${actHref(a)}">${esc(a.title || a.sport)}</a><span class="sub">${esc(a.sport)}</span></td><td class="l hide-s">${esc(a.sport)}</td><td>${esc(fmtDur(a.durationS))}</td><td>${a.distanceKm ? distStr(a.group, a.distanceKm) : '—'}</td><td class="hide-s">${a.avgHr || '—'}</td><td class="hide-s">${a.load != null ? Math.round(a.load) : '—'}</td></tr>`).join('')}</tbody></table>${list.length > S.limit ? '<p class="show-more"><button type="button" class="btn ghost" id="list-more">Show more</button></p>' : ''}` : emptyState('No activities match.')}`;
     };
 
+
+    /* ---------- Strength: weekly volume, e1RM small multiples, exercise table ---------- */
+    const sFirst = strength ? weekStart(strength.weekly[0].week) : '';
+    const sLastWeek = strength ? weekStart(today > strength.weekly[strength.weekly.length - 1].week ? today : strength.weekly[strength.weekly.length - 1].week) : '';
+    const sN = strength ? (dayNum(sLastWeek) - dayNum(sFirst)) / 7 + 1 : 0;
+    const sSpanStart = sFirst, sSpanEnd = strength ? addDays(sLastWeek, 6) : '';
+    const sWeeks = strength ? Array.from({ length: sN }, (_, i) => {
+      const wk = addDays(sFirst, i * 7), r = strength.weekly.find(x => x.week === wk);
+      return { week: wk, v: r ? r.volumeLb : 0, sets: r ? r.sets : 0, sessions: r ? r.sessions : 0 };
+    }) : [];
+    const monthTicks = (x0, x1, w, xOf, y, gapPx = 54) => {
+      let s = '', lastLx = -99, first = true;
+      for (let m = x0.slice(0, 7); m <= x1.slice(0, 7); m = fromNum(dayNum(`${m}-01`) + 31).slice(0, 7)) {
+        const d = m === x0.slice(0, 7) ? x0 : `${m}-01`, lx = xOf(d);
+        if (lx - lastLx < gapPx || lx > w - 24) continue;
+        lastLx = lx;
+        s += `<text x="${lx.toFixed(1)}" y="${y}">${esc(first || m.endsWith('-01') ? fd(d, 'monY') : fd(d, 'mon'))}</text>`; first = false;
+      }
+      return s;
+    };
+    const drawStrWeekly = w => {
+      const left = 40, right = 6, topM = 6, plotH = 170, bottom = 22, H = topM + plotH + bottom, plotW = w - left - right, bw = plotW / sN;
+      const x = i => left + i * bw;
+      const max = niceCeil(Math.max(...sWeeks.map(k => k.v), 1000));
+      const y = v => topM + plotH - (v / max) * plotH;
+      const avg = sWeeks.map((_, i) => { const sl = sWeeks.slice(Math.max(0, i - 3), i + 1); return sl.reduce((a, k) => a + k.v, 0) / sl.length; });
+      const total = sWeeks.reduce((a, k) => a + k.v, 0);
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`Weekly lifting volume in pounds, ${sN} weeks, ${nf(total, 0)} lb in total`)}">`;
+      [0, .5, 1].forEach(f => { s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(max * f)}" y2="${y(max * f)}"/><text class="y" x="${left - 6}" y="${y(max * f) + 4}">${fmtK(max * f)}</text>`; });
+      const gapPx = bw > 6 ? 2 : bw > 3 ? 1 : .5, cur = sN - 1;
+      sWeeks.forEach((k, i) => { if (k.v > 0) s += `<rect x="${x(i) + gapPx / 2}" y="${y(k.v)}" width="${Math.max(1, bw - gapPx)}" height="${Math.max(1, topM + plotH - y(k.v))}" fill="${k.week === weekStart(today) ? COL.accent : COL.dim}"/>`; });
+      s += `<path d="${avg.map((v, i) => `${i ? 'L' : 'M'}${(x(i) + bw / 2).toFixed(1)},${y(v).toFixed(1)}`).join('')}" fill="none" stroke="${COL.text}" stroke-width="1" stroke-dasharray="3 3" stroke-linejoin="round" opacity=".7"/>`;
+      s += monthTicks(sSpanStart, sSpanEnd, w, d => left + ((dayNum(d) - dayNum(sFirst)) / 7) * bw, H - 6);
+      sWeeks.forEach((k, i) => {
+        const to = addDays(k.week, 6);
+        const tip = `<b>${fd(k.week, 'md')} – ${fd(to, 'md')}</b><br>${k.sessions ? `${nf(k.v, 0)} lb · ${k.sets} sets · ${k.sessions} ${k.sessions === 1 ? 'session' : 'sessions'}` : 'No lifting'}`;
+        s += `<rect class="hv" x="${x(i)}" y="${topM}" width="${bw}" height="${plotH}" fill="transparent" data-tip="${esc(tip)}"/>`;
+      });
+      return `${s}</svg>`;
+    };
+    const MULTI = strength ? strength.exercises.slice(0, 6) : [];
+    const drawMultiple = ex => w => {
+      const left = 34, right = 8, top = 18, plotH = 62, bottom = 20, H = top + plotH + bottom, plotW = w - left - right;
+      const d0 = dayNum(sSpanStart), span = Math.max(1, dayNum(sSpanEnd) - d0);
+      const vs = ex.series.map(p => p.v), rng = Math.max(...vs) - Math.min(...vs), step = rng <= 40 ? 5 : rng <= 100 ? 10 : rng <= 250 ? 25 : 50;
+      let lo = Math.floor(Math.min(...vs) / step) * step, hi = Math.ceil(Math.max(...vs) / step) * step;
+      if (hi - lo < step) hi = lo + step;
+      const x = d => left + ((dayNum(d) - d0) / span) * plotW, y = v => top + plotH - ((v - lo) / (hi - lo)) * plotH;
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`${ex.title}: estimated one-rep max, ${ex.series.length} sessions, ${nf(ex.series[0].v, 0)} to ${nf(ex.series[ex.series.length - 1].v, 0)} lb, best ${ex.best ? nf(ex.best.e1rmLb, 0) : ''} lb`)}">`;
+      [lo, hi].forEach(v => { s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(v)}" y2="${y(v)}"/><text class="y" x="${left - 6}" y="${y(v) + 4}">${nf(v, 0)}</text>`; });
+      s += monthTicks(sSpanStart, sSpanEnd, w, d => x(d), H - 4, 46);
+      if (ex.series.length > 1) s += `<path d="${ex.series.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${y(p.v).toFixed(1)}`).join('')}" fill="none" stroke="${COL.series}" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>`;
+      const best = ex.series.reduce((m, p) => (!m || p.v > m.v ? p : m), null);
+      ex.series.forEach(p => { if (p !== best) s += `<circle cx="${x(p.date).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="1.5" fill="${COL.series}"/>`; });
+      const bx = x(best.date), by = y(best.v);
+      const anchor = bx > w - right - 14 ? 'end' : bx < left + 14 ? 'start' : 'middle';
+      s += `<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="3" fill="${COL.accent}"/><text class="best" x="${(anchor === 'end' ? bx + 3 : anchor === 'start' ? bx - 3 : bx).toFixed(1)}" y="${(by - 8).toFixed(1)}" text-anchor="${anchor}">${nf(best.v, 0)}</text>`;
+      ex.series.forEach(p => {
+        const tip = `<b>${esc(ex.title)}</b><br>${esc(fd(p.date, 'long'))}<br>e1RM ${nf(p.v, 0)} lb`;
+        s += `<circle cx="${x(p.date).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="7" fill="transparent" data-tip="${esc(tip)}"/>`;
+      });
+      return `${s}</svg>`;
+    };
+    const exRows = () => (strength ? strength.exercises.map(e => ({ ...e, last: e.series[e.series.length - 1].date, top: e.best ? e.best.e1rmLb : 0 })) : []);
+    const EX_COLS = [
+      { k: 'title', l: 'Exercise', v: e => e.title.toLowerCase(), c: 'l' },
+      { k: 'sessions', l: 'Sessions', v: e => e.sessions },
+      { k: 'set', l: 'Best set', v: e => (e.best ? e.best.weightLb : 0), c: 'hide-s' },
+      { k: 'top', l: 'Best e1RM', v: e => e.top },
+      { k: 'last', l: 'Last', v: e => e.last },
+    ];
+    const SX = { key: 'sessions', dir: -1 };
+    const bestSet = e => (e.best ? `${e.best.reps} × ${nf(e.best.weightLb, 1)}` : '—');
+    const drawExTable = () => {
+      const col = EX_COLS.find(c => c.k === SX.key), rows = exRows().sort((a, b) => ((col.v(a) < col.v(b) ? -1 : col.v(a) > col.v(b) ? 1 : 0) * SX.dir) || a.title.localeCompare(b.title));
+      $('#str-table').innerHTML = `<table class="data ex-table"><caption class="sr-only">Exercises by sessions, best set, best estimated one-rep max and last trained</caption><thead><tr>${EX_COLS.map(c => `<th scope="col" class="${c.c || ''}" aria-sort="${SX.key === c.k ? (SX.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" data-xsort="${c.k}">${c.l}</button></th>`).join('')}</tr></thead><tbody>${rows.map(e => `<tr><td class="l">${esc(e.title)}<span class="sub">${esc(bestSet(e))} lb</span></td><td>${e.sessions}</td><td class="hide-s">${esc(bestSet(e))} lb</td><td>${nf(e.top, 0)} lb</td><td>${esc(fd(e.last, 'md'))}${e.last.slice(0, 4) !== today.slice(0, 4) ? ` ${e.last.slice(2, 4) === '' ? '' : `’${e.last.slice(2, 4)}`}` : ''}</td></tr>`).join('')}</tbody></table>`;
+    };
+
+    /* ---------- Body weight: smoothed change from the first day ---------- */
+    const drawBw = w => {
+      const left = 40, right = 8, top = 10, plotH = 110, bottom = 22, H = top + plotH + bottom, plotW = w - left - right;
+      const d0 = dayNum(bw[0].date), span = Math.max(1, dayNum(bw[bw.length - 1].date) - d0);
+      const vs = bw.map(p => p.v).concat(0), step = 1;
+      const lo = Math.floor(Math.min(...vs) / step) * step, hi = Math.max(lo + step * 2, Math.ceil(Math.max(...vs) / step) * step);
+      const x = d => left + ((dayNum(d) - d0) / span) * plotW, y = v => top + plotH - ((v - lo) / (hi - lo)) * plotH;
+      const last = bw[bw.length - 1];
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`Body weight trend: ${signed(last.v)} lb since ${fd(bw[0].date, 'md')}`)}">`;
+      [lo, hi].forEach(v => { if (v !== 0) s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(v)}" y2="${y(v)}"/><text class="y" x="${left - 6}" y="${y(v) + 4}">${signed(v, 0)}</text>`; });
+      s += `<line x1="${left}" x2="${w - right}" y1="${y(0)}" y2="${y(0)}" stroke="${COL.faint}" stroke-width="1" shape-rendering="crispEdges"/><text class="y" x="${left - 6}" y="${y(0) + 4}">0</text>`;
+      s += monthTicks(bw[0].date, last.date, w, d => x(d), H - 6, 54);
+      s += `<path d="${bw.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${y(p.v).toFixed(1)}`).join('')}" fill="none" stroke="${COL.text}" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round"/>`;
+      s += `<circle cx="${x(last.date).toFixed(1)}" cy="${y(last.v).toFixed(1)}" r="3" fill="${COL.accent}"/>`;
+      const cw = Math.max(3, plotW / (span + 1));
+      bw.forEach(p => { s += `<rect class="hv" x="${(x(p.date) - cw / 2).toFixed(1)}" y="${top}" width="${cw.toFixed(1)}" height="${plotH}" fill="transparent" data-tip="${esc(`<b>${esc(fd(p.date, 'long'))}</b><br>${signed(p.v)} lb`)}"/>`; });
+      return `${s}</svg>`;
+    };
+
     /* ---------- wiring ---------- */
     const runRibbon = mount($('#ribbon'), drawRibbon);
     const runWeekly = mount($('#weekly'), drawWeekly);
@@ -1183,6 +1309,28 @@
     });
     $('#yoy').addEventListener('pointermove', yoyHover);
     $('#yoy').addEventListener('pointerleave', () => { const xh = $('#yoy-xh'); xh && xh.setAttribute('visibility', 'hidden'); });
+
+    if (strength) {
+      const tot = strength.weekly.reduce((a, k) => a + k.volumeLb, 0), ses = strength.weekly.reduce((a, k) => a + k.sessions, 0);
+      $('#str-cap').textContent = `${ses} sessions · ${nf(tot, 0)} lb lifted since ${fd(strength.weekly[0].week, 'monY')}`;
+      mount($('#str-weekly'), drawStrWeekly); bindTip($('#str-weekly'));
+      const box = $('#str-multi');
+      if (box) {
+        box.innerHTML = MULTI.map((e, i) => `<figure><figcaption>${esc(e.title)}<span>${e.best ? `${nf(e.best.e1rmLb, 0)} lb` : ''}</span></figcaption><div class="chart" id="str-m${i}"></div></figure>`).join('');
+        MULTI.forEach((e, i) => { mount($(`#str-m${i}`), drawMultiple(e)); bindTip($(`#str-m${i}`)); });
+        drawExTable();
+        $('#str-table').addEventListener('click', e => {
+          const b = e.target.closest('[data-xsort]');
+          if (!b) return;
+          const k = b.dataset.xsort; SX.dir = SX.key === k ? -SX.dir : (k === 'title' ? 1 : -1); SX.key = k; drawExTable();
+        });
+      }
+    }
+    if (bw) {
+      const last = bw[bw.length - 1];
+      $('#bw-label').innerHTML = `<b>${signed(last.v)} lb</b> since ${esc(fd(bw[0].date, 'md'))}`;
+      mount($('#bw-chart'), drawBw); bindTip($('#bw-chart'));
+    }
     /* start the ribbon scrolled to the most recent data */
     const rib = $('#ribbon');
     rib.scrollLeft = Math.max(0, rib.scrollWidth - rib.clientWidth);
