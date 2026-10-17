@@ -3,9 +3,9 @@ title: What I attend to becomes my life
 type: evergreen
 date: '2022-12-19'
 published: '2026-10-16'
-updated: '2026-10-16'
+updated: '2026-10-17'
 created: '2026-10-16'
-modified: '2026-10-16'
+modified: '2026-10-17'
 ---
 
 Life is attention. What we pay attention to sets the direction of our lives and defines our lived experience of them.

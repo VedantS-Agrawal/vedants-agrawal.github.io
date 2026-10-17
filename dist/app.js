@@ -189,7 +189,14 @@
       return out;
     };
     const muscles = clean(j.muscles), muscleSets = clean(j.muscleSets);
-    return weekly.length ? { weekly, exercises, muscles, muscleSets } : null;
+    /* per-day [primary, secondary] set counts; lets any date window be summed exactly */
+    const muscleDays = {};
+    Object.keys(j.muscleDays && typeof j.muscleDays === 'object' ? j.muscleDays : {}).filter(isDay).sort().forEach(d => {
+      const m = {};
+      Object.keys(j.muscleDays[d] || {}).forEach(g => { const c = j.muscleDays[d][g]; if (Array.isArray(c) && (Number(c[0]) > 0 || Number(c[1]) > 0)) m[g] = [Number(c[0]) || 0, Number(c[1]) || 0]; });
+      if (Object.keys(m).length) muscleDays[d] = m;
+    });
+    return weekly.length ? { weekly, exercises, muscles, muscleSets, muscleDays } : null;
   });
   const loadBodyWeight = () => loadOptional('/data/weight.json').then(j => {
     const pts = j && Array.isArray(j.points) ? j.points.filter(p => p && isDay(p.date) && Number.isFinite(Number(p.deltaLb))).map(p => ({ date: p.date, v: Number(p.deltaLb) })).sort((a, b) => a.date.localeCompare(b.date)) : [];
@@ -278,7 +285,7 @@
   const page = (html, wide = false) => { app.innerHTML = `<div class="page-wrap${wide ? ' wide' : ''}">${html}</div>`; };
   const setTitle = t => { document.title = t ? `${t} · Vedant Agrawal` : 'Vedant Agrawal'; };
   // key = null → no description line at all (Writing)
-  const head = (title, key, data, extra = '') => `<header class="page-head">${extra}<h1>${esc(title)}</h1>${key ? `<p class="desc">${esc((data.descriptions && data.descriptions[key]) || `[${title} description]`)}</p>` : ''}</header>`;
+  const head = (title, key, data, extra = '') => `<header class="page-head">${extra}<h1>${esc(title)}</h1>${key && data.descriptions && data.descriptions[key] ? `<p class="desc">${esc(data.descriptions[key])}</p>` : ''}</header>`;
   const emptyState = t => `<p class="empty-state">${esc(t)}</p>`;
 
   /* tooltip (delegated, uses [data-tip] holding escaped HTML) */
@@ -799,6 +806,30 @@
   /* "distance" sports report miles (yards for swims); the rest report time */
   const totalMetric = (g, o) => (['run', 'ride', 'swim', 'walk', 'hike'].includes(g) && o.km > 0 ? distStr(g, o.km) : fmtDur(o.s));
 
+  /* Period switch: rolling windows ending today. Quarter and Year are whole Mon-Sun weeks ending with the current week. */
+  const PERIODS = [['month', 'Month'], ['quarter', 'Quarter'], ['year', 'Year']];
+  const PERIOD_LABEL = { month: 'Last 30 days', quarter: 'Last 12 weeks', year: 'Last 52 weeks' };
+  const NONE = 'No training in this period.';
+  const periodWin = (period, today) => {
+    if (period === 'month') return { period, from: addDays(today, -29), to: today, last: today, n: 30, daily: true };
+    const n = period === 'year' ? 52 : 12, to = addDays(weekStart(today), 6);
+    return { period, from: addDays(weekStart(today), -(n - 1) * 7), to, last: to > today ? today : to, n, daily: false };
+  };
+  /* x-axis labels for a date range: Mondays for short ranges, month starts otherwise */
+  const winTicks = (from, to, xOf, y, gap = 54, maxX = Infinity) => {
+    let s = '', lastX = -99;
+    const put = (d, label) => { const x = xOf(d); if (x - lastX < gap || x > maxX) return; lastX = x; s += `<text x="${x.toFixed(1)}" y="${y}">${esc(label)}</text>`; };
+    if (dayNum(to) - dayNum(from) <= 40) {
+      for (let d = from; d <= to; d = addDays(d, 1)) if (d === from || weekStart(d) === d) put(d, fd(d, 'md'));
+      return s;
+    }
+    const starts = [];
+    for (let m = from.slice(0, 7); `${m}-01` <= to; m = fromNum(dayNum(`${m}-01`) + 31).slice(0, 7)) if (`${m}-01` > from) starts.push(`${m}-01`);
+    if (!starts.length || xOf(starts[0]) - xOf(from) >= gap) put(from, fd(from, 'monY'));
+    starts.forEach(d => put(d, fd(d, d.slice(5, 7) === '01' ? 'monY' : 'mon')));
+    return s;
+  };
+
   const renderTraining = async (data, entries) => {
     setTitle('Training history');
     const [t, well, strength, bw] = await Promise.all([loadTraining(data, entries), loadWellness(), loadStrength(), loadBodyWeight()]);
@@ -812,9 +843,20 @@
     const y0 = +firstDate.slice(0, 4), y1 = +lastDate.slice(0, 4);
     const groups = GROUPS.filter(g => acts.some(a => a.group === g));
     const qd = new URLSearchParams(location.search).get('date');
-    const S = { year: y1, metric: 'duration', group: 'all', range: isDay(qd) ? { from: qd, to: qd, label: fd(qd) } : null, sortKey: 'date', sortDir: -1, limit: 50, monthsAll: false };
-    const yearList = []; for (let y = y1; y >= y0; y--) yearList.push(y);
+    const pq = new URLSearchParams(location.search).get('period');
+    let period = PERIODS.some(p => p[0] === pq) ? pq : 'quarter';
+    /* a ?date= link without a period opens the narrowest window that contains that day */
+    if (!pq && isDay(qd)) period = PERIODS.map(p => p[0]).find(k => qd >= periodWin(k, today).from) || 'year';
+    const S = { period, win: periodWin(period, today), metric: 'duration', group: 'all', range: isDay(qd) ? { from: qd, to: qd, label: fd(qd) } : null, sortKey: 'date', sortDir: -1, limit: 50 };
+    const inWin = d => d >= S.win.from && d <= S.win.last;
     const filt = () => (S.group === 'all' ? acts : acts.filter(a => a.group === S.group));
+    const winActs = list => list.filter(a => inWin(a.date));
+    const isYear = () => S.period === 'year';
+    /* chart buckets: one per day (Month) or per Mon-Sun week (Quarter, Year) */
+    const bucketsOf = () => {
+      const w = S.win, daily = w.daily, n = daily ? dayNum(w.last) - dayNum(w.from) + 1 : w.n;
+      return { daily, n, unit: daily ? 1 : 7, from: i => addDays(w.from, i * (daily ? 1 : 7)), to: i => addDays(w.from, i * (daily ? 1 : 7) + (daily ? 0 : 6)), idx: d => Math.floor((dayNum(d) - dayNum(w.from)) / (daily ? 1 : 7)) };
+    };
     const isDur = () => S.metric === 'duration';
     const val = a => (isDur() ? a.durationS / 3600 : a.distanceKm / MI);
     const fmtVal = v => (isDur() ? fmtHours(v) : `${nf(v, 1)} mi`);
@@ -828,10 +870,10 @@
       return `<table class="data race"><caption class="sr-only">Race distances in miles, with your longest swim, ride and run so far. Distances already exceeded are marked.</caption><thead><tr><th scope="col">Distance</th><th scope="col">Swim</th><th scope="col">Bike</th><th scope="col">Run</th></tr></thead><tbody>${RACES.map(r => `<tr><th scope="row">${r[0]}</th>${[1, 2, 3].map(i => { const hit = L[i - 1] && L[i - 1].distanceKm / MI >= r[i]; return `<td${hit ? ' class="hit"' : ''}>${dv(r[i])}${hit ? '<span class="sr-only"> (exceeded)</span>' : ''}</td>`; }).join('')}</tr>`).join('')}<tr class="longest"><th scope="row">Longest</th>${L.map((a, i) => `<td>${a ? `<a href="${actHref(a)}">${dv(a.distanceKm / MI)}</a>` : '—'}</td>`).join('')}</tr></tbody></table><p class="cap" style="margin-top:.5rem">Miles · longest single session so far, all synced data</p>`;
     };
 
-    page(`${head('Training history', 'training', data, crumb)}
+    page(`${head('Training history', null, data, crumb)}
+      <div class="t-period"><span class="seg" id="period-seg" role="group" aria-label="Period">${PERIODS.map(([k, l]) => `<button type="button" data-period="${k}" aria-pressed="${k === S.period}">${l}</button>`).join('')}</span></div>
       <p class="cov">Synced data: ${esc(fd(cov.start))} – ${esc(fd(cov.end))}${cov.lastSync ? ` · last sync ${esc(fd(String(cov.lastSync).slice(0, 10)))}` : ''}</p>
       <div class="t-controls" role="group" aria-label="Chart settings">
-        ${yearList.length > 1 ? `<div><span class="label">Year</span><span class="chips" id="year-chips">${yearList.map(y => `<button type="button" class="chip" data-y="${y}" aria-pressed="${y === S.year}">${y}</button>`).join('')}</span></div>` : ''}
         <div><span class="label">Show</span><span class="seg" id="metric-seg"><button type="button" data-metric="duration" aria-pressed="true">Duration</button><button type="button" data-metric="distance" aria-pressed="false">Distance</button></span></div>
         <div><span class="label">Sport</span><span class="chips" id="group-chips"><button type="button" class="chip" data-g="all" aria-pressed="true">All</button>${groups.map(g => `<button type="button" class="chip" data-g="${g}" aria-pressed="false">${GROUP_LABEL[g]}</button>`).join('')}</span></div>
       </div>
@@ -844,24 +886,24 @@
       <section class="t-section" aria-labelledby="t-rib"><header><h2 id="t-rib">Year ribbon</h2><p class="cap">One cell per day, coloured by training time</p></header>
         <div class="scroll-x ribbon" id="ribbon" tabindex="0" role="group" aria-label="Year ribbon. Arrow keys move between days; Enter shows that day's activities."></div>
         <p class="sr-only" id="rib-live" aria-live="polite"></p>
-        <div class="legend"><span><i class="sw scale"></i>Less → more time</span><span><i class="sw hatch"></i>Not synced</span></div></section>
+        <div class="legend" id="rib-legend"><span><i class="sw scale"></i>Less → more time</span><span><i class="sw hatch"></i>Not synced</span></div></section>
       <section class="t-section" aria-labelledby="t-wk"><header><h2 id="t-wk">Weekly volume</h2><p class="cap" id="wk-cap"></p></header>
         <div class="chart" id="weekly"></div>
-        <div class="legend"><span><i class="sw bar"></i>Week</span><span><i class="sw dash"></i>4-week average</span>${blocks.length ? '<span><i class="sw band"></i>Training block</span>' : ''}<span><i class="sw hatch"></i>Not synced</span></div></section>
-      <section class="t-section" aria-labelledby="t-yoy"><header><h2 id="t-yoy">Year over year</h2><p class="cap" id="yoy-cap"></p></header>
+        <div class="legend" id="wk-legend"></div></section>
+      <section class="t-section" id="yoy-sec" aria-labelledby="t-yoy"><header><h2 id="t-yoy">Year over year</h2><p class="cap" id="yoy-cap"></p></header>
         <div class="chart" id="yoy"></div></section>
       ${well ? `<section class="t-section" aria-labelledby="t-rec"><header><h2 id="t-rec">Recovery</h2><p class="cap" id="rec-cap"></p></header>
         <p class="chart-h">Nightly HRV</p><div class="chart" id="rec-hrv"></div>
-        <div class="legend"><span><i class="sw line"></i>HRV</span><span><i class="sw band"></i>Normal range</span></div>
+        <div class="legend" id="rec-legend"><span><i class="sw line"></i>HRV</span><span><i class="sw band"></i>Normal range</span></div>
         <p class="chart-h">Resting heart rate</p><div class="chart" id="rec-rhr"></div></section>` : ''}
       ${strength ? `<section class="t-section" aria-labelledby="t-str"><header><h2 id="t-str">Strength</h2><p class="cap" id="str-cap"></p></header>
         <p class="chart-h">Weekly volume</p><div class="chart" id="str-weekly"></div>
-        <div class="legend"><span><i class="sw bar"></i>Week</span><span><i class="sw dash"></i>4-week average</span></div>
+        <div class="legend" id="str-wk-legend"></div>
         ${Object.keys(strength.muscles).length ? `<p class="chart-h">Muscles worked</p><div id="muscles"></div>` : ''}
         ${strength.exercises.length ? `<p class="chart-h">Estimated 1RM</p><div class="str-multiples" id="str-multi"></div>
-        <div class="legend"><span><i class="sw line"></i>Best set each day</span><span><i class="sw dot"></i>All-time best</span></div>
+        <div class="legend" id="str-multi-legend"><span><i class="sw line"></i>Best set each day</span><span><i class="sw dot"></i>Best in period</span></div>
         <p class="chart-h">Exercises</p><div class="scroll-x" id="str-table"></div>` : ''}</section>` : ''}
-      ${bw ? `<section class="t-section" aria-labelledby="t-bw"><header><h2 id="t-bw">Body weight</h2><p class="cap">Smoothed trend, change only</p></header>
+      ${bw ? `<section class="t-section" aria-labelledby="t-bw"><header><h2 id="t-bw">Body weight</h2><p class="cap" id="bw-cap">Smoothed trend, change only</p></header>
         <p class="bw-label" id="bw-label"></p><div class="chart" id="bw-chart"></div></section>` : ''}
       <section class="t-section" aria-labelledby="t-mix"><header><h2 id="t-mix">Sport mix</h2><p class="cap">By time</p></header><div id="mix"></div></section>
       <section class="t-section" aria-labelledby="t-mo"><header><h2 id="t-mo">Monthly totals</h2></header><div id="months"></div></section>
@@ -922,12 +964,40 @@
     document.addEventListener('pointerdown', e => { if (!tipEl.hidden && cardDate && !(e.target.closest && e.target.closest('[data-date]'))) hideCard(); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCard(); });
 
-    /* ---------- 1. Year ribbon ---------- */
+    /* ---------- 1. Year ribbon (Year) / day strip (Month, Quarter) ---------- */
     let kb = '';
+    let ribGeom = { cx: () => 0 };
+    const drawStrip = w => {
+      const from = S.win.from, n = dayNum(S.win.last) - dayNum(from) + 1;
+      if (!filt().some(a => inWin(a.date))) return emptyState(NONE);
+      const top = 18, cellH = 30, W = Math.max(w, n * 9), cw = W / n, gap = cw > 12 ? 2 : 1;
+      const idx = d => dayNum(d) - dayNum(from), hid = uid('hr');
+      const H = top + cellH;
+      let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">${hatchDef(hid)}${winTicks(from, S.win.last, d => idx(d) * cw, 10, 54, W - 24)}`;
+      let selRect = '', kbRect = '', run = -1;
+      const flush = end => {
+        if (run < 0) return;
+        s += `<rect x="${run * cw}" y="${top}" width="${Math.max(1, (end - run) * cw - gap)}" height="${cellH}" fill="url(#${hid})" data-tip="${esc('<b>Not synced</b>')}"/>`;
+        run = -1;
+      };
+      for (let i = 0; i < n; i++) {
+        const d = addDays(from, i), o = ribMap.get(d), x = i * cw;
+        if (!o && !inCoverage(cov, d)) { if (run < 0) run = i; continue; }
+        flush(i);
+        s += `<rect class="day${o ? ' has' : ''}" x="${x}" y="${top}" width="${Math.max(1, cw - gap)}" height="${cellH}" rx="1" fill="${o ? rampColor(o.s / 60) : COL.empty}" data-date="${d}"/>`;
+        if (S.range && S.range.from === d && S.range.to === d) selRect = `<rect class="sel" x="${x - 1}" y="${top - 1}" width="${Math.max(1, cw - gap) + 2}" height="${cellH + 2}"/>`;
+        if (kb === d) kbRect = `<rect class="focus" x="${x - 1.5}" y="${top - 1.5}" width="${Math.max(1, cw - gap) + 3}" height="${cellH + 3}"/>`;
+      }
+      flush(n);
+      ribGeom = { cx: d => (idx(d) + .5) * cw };
+      return `${s}${selRect}${kbRect}</svg>`;
+    };
     const drawRibbon = w => {
       ribMap = dayMap(filt());
+      if (!isYear()) return drawStrip(w);
       const labelW = 38, top = 16, cellH = 11, gap = 5;
       const W = Math.max(w, 760), cw = (W - labelW - 2) / 366;
+      ribGeom = { cx: d => labelW + (doy(d) - 1) * cw };
       const yrs = []; for (let y = y1; y >= y0; y--) yrs.push(y);
       const H = top + yrs.length * (cellH + gap);
       const hid = uid('hr');
@@ -959,29 +1029,23 @@
     };
 
     /* ---------- 0. Season strip ---------- */
-    const yearActs = () => acts.filter(a => a.date.startsWith(String(S.year)));
     const drawSeason = w => {
-      const yr = S.year, n = daysInYear(yr), jan1 = dayNum(`${yr}-01-01`), ys = yearActs();
+      const ys = winActs(acts);
+      if (!ys.length) return emptyState(NONE);
+      const from = S.win.from, n = dayNum(S.win.last) - dayNum(from) + 1;
       const left = 34, right = 8, top = 8, plotH = 120, bottom = 22, H = top + plotH + bottom, plotW = w - left - right, slot = plotW / n;
       const maxH = niceCeil(Math.max(1, ...ys.map(a => a.durationS / 3600)));
       const y = v => top + plotH - (v / maxH) * plotH;
-      const sw = Math.max(1, Math.min(1.6, slot * .6)), hid = uid('hs');
-      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`Season ${yr}: ${ys.length} sessions, one line each, height shows duration`)}">${hatchDef(hid)}`;
+      const sw = Math.max(1, Math.min(4, slot * .35)), hid = uid('hs');
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`${PERIOD_LABEL[S.period]}: ${ys.length} sessions, one line each, height shows duration`)}">${hatchDef(hid)}`;
       [0, .5, 1].forEach(f => { s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(maxH * f)}" y2="${y(maxH * f)}"/><text class="y" x="${left - 6}" y="${y(maxH * f) + 4}">${nf(maxH * f, maxH * f % 1 ? 1 : 0)}h</text>`; });
-      const idx = d => dayNum(d) - jan1;
-      const todayIdx = Math.min(n, dayNum(today) + 1 - jan1);
+      const idx = d => dayNum(d) - dayNum(from);
       if (cov.start) {
         const cs = Math.max(0, Math.min(n, idx(cov.start))), ce = Math.max(0, Math.min(n, idx(cov.end) + 1));
         if (cs > 0) s += `<rect x="${left}" y="${top}" width="${cs * slot}" height="${plotH}" fill="url(#${hid})" data-tip="${esc('<b>Not synced</b>')}"/>`;
-        if (todayIdx > ce) s += `<rect x="${left + ce * slot}" y="${top}" width="${(todayIdx - ce) * slot}" height="${plotH}" fill="url(#${hid})" data-tip="${esc('<b>Not synced</b>')}"/>`;
+        if (n > ce) s += `<rect x="${left + ce * slot}" y="${top}" width="${(n - ce) * slot}" height="${plotH}" fill="url(#${hid})" data-tip="${esc('<b>Not synced</b>')}"/>`;
       }
-      let lastLx = -99;
-      for (let m = 0; m < 12; m++) {
-        const lx = left + (dayNum(`${yr}-${pad(m + 1)}-01`) - jan1) * slot;
-        if (lx - lastLx < 34) continue;
-        lastLx = lx;
-        s += `<text x="${lx}" y="${H - 6}">${esc(fd(`${yr}-${pad(m + 1)}-01`, 'mon'))}</text>`;
-      }
+      s += winTicks(from, S.win.last, d => left + idx(d) * slot, H - 6, 54, w - 24);
       const byDay = new Map(); ys.forEach(a => { (byDay.get(a.date) || byDay.set(a.date, []).get(a.date)).push(a); });
       let lines = '', hits = '';
       byDay.forEach((list, d) => {
@@ -996,20 +1060,20 @@
       return `${s}${lines}${hits}</svg>`;
     };
     const drawSeasonText = () => {
-      const ys = yearActs(), tot = sumActs(ys), present = GROUPS.filter(g => ys.some(a => a.group === g));
-      $('#season-cap').textContent = ys.length ? `${S.year} · ${tot.n} sessions · ${fmtDur(tot.s)}${tot.km ? ` · ${fmtMi(tot.km)} mi` : ''}` : `${S.year} · no sessions`;
-      $('#season-legend').innerHTML = present.map(g => { const st = GSTYLE[g]; return `<span><svg width="10" height="16" viewBox="0 0 10 16" aria-hidden="true" style="vertical-align:middle;margin-right:6px"><line x1="5" x2="5" y1="15" y2="1" stroke="${st.c}" stroke-opacity="${st.o}" stroke-width="1.5"${st.d ? ` stroke-dasharray="${st.d}"` : ''}/></svg>${GROUP_LABEL[g]}</span>`; }).join('') + '<span><i class="sw hatch"></i>Not synced</span>';
+      const ys = winActs(acts), tot = sumActs(ys), present = GROUPS.filter(g => ys.some(a => a.group === g)), lbl = PERIOD_LABEL[S.period];
+      $('#season-cap').textContent = ys.length ? `${lbl} · ${tot.n} sessions · ${fmtDur(tot.s)}${tot.km ? ` · ${fmtMi(tot.km)} mi` : ''}` : `${lbl} · no sessions`;
+      $('#season-legend').innerHTML = ys.length ? present.map(g => { const st = GSTYLE[g]; return `<span><svg width="10" height="16" viewBox="0 0 10 16" aria-hidden="true" style="vertical-align:middle;margin-right:6px"><line x1="5" x2="5" y1="15" y2="1" stroke="${st.c}" stroke-opacity="${st.o}" stroke-width="1.5"${st.d ? ` stroke-dasharray="${st.d}"` : ''}/></svg>${GROUP_LABEL[g]}</span>`; }).join('') + '<span><i class="sw hatch"></i>Not synced</span>' : '';
       const per = present.map(g => ({ g, ...sumActs(ys.filter(a => a.group === g)) })).sort((a, b) => b.s - a.s);
       $('#sport-totals').innerHTML = per.map(o => `<li>${sportIcon(o.g)}<span class="nm">${GROUP_LABEL[o.g]}</span><span class="st">${o.n} ${o.n === 1 ? 'session' : 'sessions'} · ${esc(totalMetric(o.g, o))}</span></li>`).join('');
     };
 
     /* ---------- Recovery (HRV + resting HR) ---------- */
     const drawTrend = kind => w => {
-      const key = kind === 'hrv' ? 'hrv' : 'restingHr', yr = String(S.year);
-      const days = well.days.filter(d => d.date.startsWith(yr) && d[key] != null);
-      if (days.length < 2) return `<p class="empty-state" style="padding:1rem 0">${days.length ? 'One night recorded' : `No ${kind === 'hrv' ? 'HRV' : 'resting heart rate'} data for ${yr}`}.</p>`;
+      const key = kind === 'hrv' ? 'hrv' : 'restingHr';
+      const days = well.days.filter(d => inWin(d.date) && d[key] != null);
+      if (days.length < 2) return `<p class="empty-state" style="padding:1rem 0">${days.length ? 'One night recorded' : `No ${kind === 'hrv' ? 'HRV' : 'resting heart rate'} data in this period`}.</p>`;
       const left = 40, right = 34, top = 8, plotH = 110, bottom = 22, H = top + plotH + bottom, plotW = w - left - right;
-      const d0 = dayNum(days[0].date), span = Math.max(1, dayNum(days[days.length - 1].date) - d0);
+      const d0 = dayNum(S.win.from), span = Math.max(1, dayNum(S.win.last) - d0);
       const band = kind === 'hrv' ? days.filter(d => d.hrvLow != null && d.hrvHigh != null) : [];
       const vs = days.map(d => d[key]).concat(band.flatMap(d => [d.hrvLow, d.hrvHigh]));
       const step = kind === 'hrv' ? 10 : 5;
@@ -1017,8 +1081,7 @@
       const x = d => left + ((dayNum(d) - d0) / span) * plotW, y = v => top + plotH - ((v - lo) / (hi - lo)) * plotH;
       let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`${kind === 'hrv' ? 'Nightly HRV' : 'Resting heart rate'}, ${days.length} nights, ${days[0][key]} to ${days[days.length - 1][key]}, range ${Math.min(...days.map(d => d[key]))} to ${Math.max(...days.map(d => d[key]))}`)}">`;
       [lo, (lo + hi) / 2, hi].forEach(v => { s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(v)}" y2="${y(v)}"/><text class="y" x="${left - 6}" y="${y(v) + 4}">${nf(v, 1)}</text>`; });
-      const nt = Math.max(2, Math.min(6, Math.floor(plotW / 78)));
-      for (let i = 0; i < nt; i++) { const dd = fromNum(d0 + Math.round((span * i) / (nt - 1))); s += `<text x="${x(dd)}" y="${H - 6}" text-anchor="${i === 0 ? 'start' : i === nt - 1 ? 'end' : 'middle'}">${esc(fd(dd, 'md'))}</text>`; }
+      s += winTicks(S.win.from, S.win.last, x, H - 6, 54, w - 24);
       if (band.length > 1) {
         /* normal-range band, split where nights are missing */
         let seg = [];
@@ -1040,28 +1103,28 @@
       return `${s}</svg>`;
     };
 
-    /* ---------- 2. Weekly volume ---------- */
-    const wk0 = weekStart(firstDate), wk1 = weekStart(lastDate);
-    const nWeeks = (dayNum(wk1) - dayNum(wk0)) / 7 + 1;
-    const weekIdx = d => (dayNum(weekStart(d)) - dayNum(wk0)) / 7;
+    /* ---------- 2. Weekly volume (daily bars for Month) ---------- */
     let weeklySummary = '';
     const drawWeekly = w => {
-      const fa = filt();
-      const bk = Array.from({ length: nWeeks }, () => ({ s: 0, km: 0, n: 0 }));
-      fa.forEach(a => { const i = weekIdx(a.date); if (i >= 0 && i < nWeeks) { bk[i].s += a.durationS; bk[i].km += a.distanceKm; bk[i].n++; } });
+      const fa = winActs(filt());
+      if (!fa.length) return emptyState(NONE);
+      const B = bucketsOf(), wf = S.win.from;
+      const bk = Array.from({ length: B.n }, () => ({ s: 0, km: 0, n: 0 }));
+      fa.forEach(a => { const i = B.idx(a.date); if (i >= 0 && i < B.n) { bk[i].s += a.durationS; bk[i].km += a.distanceKm; bk[i].n++; } });
       const vals = bk.map(b => (isDur() ? b.s / 3600 : b.km / MI));
-      const covered = bk.map((_, i) => cov.start && addDays(wk0, i * 7 + 6) >= cov.start && addDays(wk0, i * 7) <= cov.end);
+      const covered = bk.map((_, i) => cov.start && B.to(i) >= cov.start && B.from(i) <= cov.end);
       const avg = vals.map((_, i) => {
+        if (B.daily) return null;
         const sl = []; for (let j = i; j >= 0 && sl.length < 4; j--) if (covered[j]) sl.push(vals[j]);
         return covered[i] && sl.length ? sl.reduce((a, b) => a + b, 0) / sl.length : null;
       });
       /* training blocks -> lanes */
-      const bands = blocks.map(b => ({ ...b, i0: Math.max(0, weekIdx(b.start)), i1: Math.min(nWeeks, weekIdx(b.end) + 1) })).filter(b => b.i1 > 0 && b.i0 < nWeeks);
+      const bands = blocks.map(b => ({ ...b, i0: Math.max(0, B.idx(b.start)), i1: Math.min(B.n, B.idx(b.end) + 1) })).filter(b => b.i1 > 0 && b.i0 < B.n);
       const laneEnds = [];
       bands.forEach(b => { let l = laneEnds.findIndex(e => e <= b.i0); if (l < 0) { l = laneEnds.length; laneEnds.push(0); } laneEnds[l] = b.i1; b.lane = l; });
       const lanes = laneEnds.length;
       const left = 40, right = 6, plotH = 170, topM = 6 + lanes * 13, bottom = 22;
-      const H = topM + plotH + bottom, plotW = w - left - right, bw = plotW / nWeeks;
+      const H = topM + plotH + bottom, plotW = w - left - right, bw = plotW / B.n;
       const x = i => left + i * bw;
       const max = niceCeil(Math.max(...vals, isDur() ? 1 : 5));
       const y = v => topM + plotH - (v / max) * plotH;
@@ -1079,11 +1142,11 @@
         }
       });
       if (cov.start) {
-        const xs = left + ((dayNum(cov.start) - dayNum(wk0)) / 7) * bw, xe = left + ((dayNum(cov.end) + 1 - dayNum(wk0)) / 7) * bw;
-        if (xs > left) s += `<rect x="${left}" y="${topM}" width="${xs - left}" height="${plotH}" fill="url(#${hid})"/>`;
-        if (xe < w - right) s += `<rect x="${xe}" y="${topM}" width="${w - right - xe}" height="${plotH}" fill="url(#${hid})"/>`;
+        const xs = left + ((dayNum(cov.start) - dayNum(wf)) / B.unit) * bw, xe = left + ((dayNum(cov.end) + 1 - dayNum(wf)) / B.unit) * bw;
+        if (xs > left) s += `<rect x="${left}" y="${topM}" width="${Math.min(xs, w - right) - left}" height="${plotH}" fill="url(#${hid})"/>`;
+        if (xe < w - right) s += `<rect x="${Math.max(xe, left)}" y="${topM}" width="${w - right - Math.max(xe, left)}" height="${plotH}" fill="url(#${hid})"/>`;
       }
-      const curW = cov.end ? weekIdx(cov.end) : -1;
+      const curW = cov.end ? B.idx(cov.end) : -1;
       const gapPx = bw > 6 ? 2 : bw > 3 ? 1 : .5;
       vals.forEach((v, i) => {
         if (!covered[i] || v <= 0) return;
@@ -1092,19 +1155,13 @@
       let path = '';
       avg.forEach((v, i) => { if (v != null) path += `${path ? 'L' : 'M'}${x(i) + bw / 2},${y(v)}`; });
       if (path) s += `<path d="${path}" fill="none" stroke="${COL.text}" stroke-width="1" stroke-dasharray="3 3" stroke-linejoin="round" opacity=".7"/>`;
-      let lastLx = -99;
-      for (let i = 0; i < nWeeks; i++) {
-        const d = addDays(wk0, i * 7), prevD = i ? addDays(wk0, (i - 1) * 7) : '';
-        if (i && d.slice(5, 7) === prevD.slice(5, 7)) continue;
-        if (x(i) - lastLx < 54) continue;
-        lastLx = x(i);
-        s += `<text x="${x(i)}" y="${H - 6}">${esc(d.slice(5, 7) === '01' || !i ? fd(d, 'monY') : fd(d, 'mon'))}</text>`;
-      }
+      s += winTicks(wf, S.win.last, d => left + ((dayNum(d) - dayNum(wf)) / B.unit) * bw, H - 6, 54, w - 24);
       bk.forEach((b, i) => {
-        const from = addDays(wk0, i * 7), to = addDays(from, 6), blk = blockFor(blocks, from) || blockFor(blocks, to);
-        const partial = covered[i] && (from < cov.start || to > cov.end);
-        const tip = `<b>${fd(from, 'md')} – ${fd(to, 'md')}</b><br>${covered[i] ? `${fmtDur(b.s)} · ${fmtMi(b.km)} mi · ${b.n} ${b.n === 1 ? 'session' : 'sessions'}${partial ? '<br>Partial week' : ''}${blk ? `<br>${esc(blk.title)}` : ''}` : 'Not synced'}`;
-        if (covered[i]) s += `<rect class="hit" data-week="${i}" x="${x(i)}" y="${topM}" width="${bw}" height="${plotH}" data-tip="${esc(tip)}"/>`;
+        const from = B.from(i), to = B.to(i), blk = blockFor(blocks, from) || blockFor(blocks, to);
+        const partial = !B.daily && covered[i] && (from < cov.start || to > cov.end);
+        const head = B.daily ? fd(from, 'day') : `${fd(from, 'md')} – ${fd(to, 'md')}`;
+        const tip = `<b>${head}</b><br>${covered[i] ? `${fmtDur(b.s)} · ${fmtMi(b.km)} mi · ${b.n} ${b.n === 1 ? 'session' : 'sessions'}${partial ? '<br>Partial week' : ''}${blk ? `<br>${esc(blk.title)}` : ''}` : 'Not synced'}`;
+        if (covered[i]) s += `<rect class="hit" data-b="${i}" x="${x(i)}" y="${topM}" width="${bw}" height="${plotH}" data-tip="${esc(tip)}"/>`;
       });
       return `${s}</svg>`;
     };
@@ -1159,26 +1216,34 @@
       showTip(`<b>${esc(fd(fromNum(dayNum('2025-01-01') + d - 1), 'md'))}</b><br>${lines.map(esc).join('<br>')}`, e.clientX, e.clientY);
     };
 
-    /* ---------- 4. Sport mix + monthly totals ---------- */
+    /* ---------- 4. Sport mix + totals table ---------- */
     const drawMix = () => {
       const m = new Map();
-      filt().forEach(a => m.set(a.sport, (m.get(a.sport) || 0) + a.durationS));
+      winActs(filt()).forEach(a => m.set(a.sport, (m.get(a.sport) || 0) + a.durationS));
       const rows = [...m].sort((a, b) => b[1] - a[1]).slice(0, 10), tot = [...m.values()].reduce((a, b) => a + b, 0), top = rows[0] ? rows[0][1] : 1;
-      $('#mix').innerHTML = rows.length ? `<ul class="mix" aria-label="Time by sport">${rows.map(([name, sec]) => `<li><span>${esc(name)}</span><span class="track"><i style="width:${(sec / top) * 100}%"></i></span><span class="val">${esc(fmtDur(sec))} · ${Math.round((sec / tot) * 100)}%</span></li>`).join('')}</ul>` : emptyState('No activities.');
+      $('#mix').innerHTML = rows.length ? `<ul class="mix" aria-label="Time by sport">${rows.map(([name, sec]) => `<li><span>${esc(name)}</span><span class="track"><i style="width:${(sec / top) * 100}%"></i></span><span class="val">${esc(fmtDur(sec))} · ${Math.round((sec / tot) * 100)}%</span></li>`).join('')}</ul>` : emptyState(NONE);
     };
+    const totalsRow = (label, o) => `<tr><td>${label}</td><td>${o ? o.n : '—'}</td><td class="hide-s">${o ? o.days.size : '—'}</td><td>${o ? esc(fmtDur(o.s)) : '—'}</td><td>${o && o.km ? `${fmtMi(o.km)} mi` : '—'}</td><td class="hide-s">${o && o.load ? Math.round(o.load) : '—'}</td></tr>`;
+    const totalsTable = (first, cap, rows, foot) => `<table class="data"><caption class="sr-only">${cap}</caption><thead><tr><th scope="col">${first}</th><th scope="col">Sessions</th><th scope="col" class="hide-s">Active days</th><th scope="col">Time</th><th scope="col">Distance</th><th scope="col" class="hide-s">Load</th></tr></thead><tbody>${rows}</tbody></table>${foot ? '<p class="cap" style="margin-top:.5rem">† Partial coverage</p>' : ''}`;
+    /* Year: one row per month in the window. Month and Quarter: one row per week, clipped to the window. */
     const drawMonths = () => {
-      const fa = filt(), m = new Map();
-      fa.forEach(a => { const k = a.date.slice(0, 7); const o = m.get(k) || { s: 0, km: 0, n: 0, days: new Set(), load: 0 }; o.s += a.durationS; o.km += a.distanceKm; o.n++; o.days.add(a.date); o.load += a.load || 0; m.set(k, o); });
-      const keys = []; for (let k = firstDate.slice(0, 7); k <= lastDate.slice(0, 7); k = fromNum(dayNum(`${k}-01`) + 31).slice(0, 7)) keys.push(k);
-      keys.reverse();
-      const partial = k => (cov.start && k === cov.start.slice(0, 7) && cov.start.slice(8) !== '01') || (cov.end && k === cov.end.slice(0, 7) && cov.end < addDays(today, -3) && addDays(cov.end, 1).slice(0, 7) === k);
-      const shown = S.monthsAll ? keys : keys.slice(0, 12);
-      let foot = false;
-      const rows = shown.map(k => {
-        const o = m.get(k), p = partial(k); foot ||= p;
-        return `<tr><td><a href="/archive/${k}/">${esc(fd(k, 'monY'))}</a>${p ? '<span class="muted" title="Partial coverage"> †</span>' : ''}</td><td>${o ? o.n : '—'}</td><td class="hide-s">${o ? o.days.size : '—'}</td><td>${o ? esc(fmtDur(o.s)) : '—'}</td><td>${o && o.km ? `${fmtMi(o.km)} mi` : '—'}</td><td class="hide-s">${o && o.load ? Math.round(o.load) : '—'}</td></tr>`;
-      }).join('');
-      $('#months').innerHTML = `<table class="data"><caption class="sr-only">Monthly training totals</caption><thead><tr><th scope="col">Month</th><th scope="col">Sessions</th><th scope="col" class="hide-s">Active days</th><th scope="col">Time</th><th scope="col">Distance</th><th scope="col" class="hide-s">Load</th></tr></thead><tbody>${rows}</tbody></table>${foot ? '<p class="cap" style="margin-top:.5rem">† Partial coverage</p>' : ''}${keys.length > 12 ? `<p class="show-more"><button type="button" class="btn ghost" id="months-toggle">${S.monthsAll ? 'Show fewer' : 'Show all months'}</button></p>` : ''}`;
+      const fa = winActs(filt());
+      $('#t-mo').textContent = isYear() ? 'Monthly totals' : 'Weekly totals';
+      if (!fa.length) { $('#months').innerHTML = emptyState(NONE); return; }
+      const bucket = new Map();
+      const keyOf = isYear() ? a => a.date.slice(0, 7) : a => weekStart(a.date);
+      fa.forEach(a => { const k = keyOf(a); const o = bucket.get(k) || { s: 0, km: 0, n: 0, days: new Set(), load: 0 }; o.s += a.durationS; o.km += a.distanceKm; o.n++; o.days.add(a.date); o.load += a.load || 0; bucket.set(k, o); });
+      let foot = false, rows = '';
+      if (isYear()) {
+        const keys = []; for (let k = S.win.from.slice(0, 7); k <= S.win.last.slice(0, 7); k = fromNum(dayNum(`${k}-01`) + 31).slice(0, 7)) keys.push(k);
+        const partial = k => (k === S.win.from.slice(0, 7) && S.win.from.slice(8) !== '01') || (cov.start && k === cov.start.slice(0, 7) && cov.start.slice(8) !== '01') || (cov.end && k === cov.end.slice(0, 7) && cov.end < addDays(today, -3) && addDays(cov.end, 1).slice(0, 7) === k);
+        rows = keys.reverse().map(k => { const p = partial(k); foot ||= p; return totalsRow(`<a href="/archive/${k}/">${esc(fd(k, 'monY'))}</a>${p ? '<span class="muted" title="Partial coverage"> †</span>' : ''}`, bucket.get(k)); }).join('');
+        $('#months').innerHTML = totalsTable('Month', 'Monthly training totals', rows, foot);
+      } else {
+        const weeks = []; for (let k = weekStart(S.win.from); k <= S.win.last; k = addDays(k, 7)) weeks.push(k);
+        rows = weeks.reverse().map(k => { const a = k < S.win.from ? S.win.from : k, b = addDays(k, 6) > S.win.last ? S.win.last : addDays(k, 6); return totalsRow(`${esc(fd(a, 'md'))} – ${esc(fd(b, 'md'))}`, bucket.get(k)); }).join('');
+        $('#months').innerHTML = totalsTable('Week', 'Weekly training totals', rows, false);
+      }
     };
 
     /* ---------- 5. Activity list ---------- */
@@ -1192,8 +1257,8 @@
       { k: 'load', l: 'Load', v: a => a.load, c: 'hide-s' },
     ];
     const drawList = () => {
-      let list = filt();
-      if (S.range) list = list.filter(a => a.date >= S.range.from && a.date <= S.range.to);
+      /* a selected day or week overrides the window, so links to older days still list them */
+      let list = S.range ? filt().filter(a => a.date >= S.range.from && a.date <= S.range.to) : winActs(filt());
       const col = COLS.find(c => c.k === S.sortKey) || COLS[0];
       list = list.slice().sort((a, b) => {
         const va = col.v(a), vb = col.v(b);
@@ -1203,45 +1268,39 @@
       });
       $('#list-count').textContent = `${list.length} ${list.length === 1 ? 'activity' : 'activities'}`;
       const shown = list.slice(0, S.limit);
-      $('#act-list').innerHTML = `${S.range ? `<div class="filter-note"><button type="button" class="chip" id="clear-range" aria-label="Clear date filter">${esc(S.range.label)} ✕</button></div>` : ''}${list.length ? `<table class="data"><caption class="sr-only">Activities</caption><thead><tr>${COLS.map(c => `<th scope="col" class="${c.c || ''}" aria-sort="${S.sortKey === c.k ? (S.sortDir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" data-sort="${c.k}">${c.l}</button></th>`).join('')}</tr></thead><tbody>${shown.map(a => `<tr><td>${esc(fd(a.date))}</td><td class="l"><a href="${actHref(a)}">${esc(a.title || a.sport)}</a><span class="sub">${esc(a.sport)}</span></td><td class="l hide-s">${esc(a.sport)}</td><td>${esc(fmtDur(a.durationS))}</td><td>${a.distanceKm ? distStr(a.group, a.distanceKm) : '—'}</td><td class="hide-s">${a.avgHr || '—'}</td><td class="hide-s">${a.load != null ? Math.round(a.load) : '—'}</td></tr>`).join('')}</tbody></table>${list.length > S.limit ? '<p class="show-more"><button type="button" class="btn ghost" id="list-more">Show more</button></p>' : ''}` : emptyState('No activities match.')}`;
+      $('#act-list').innerHTML = `${S.range ? `<div class="filter-note"><button type="button" class="chip" id="clear-range" aria-label="Clear date filter">${esc(S.range.label)} ✕</button></div>` : ''}${list.length ? `<table class="data"><caption class="sr-only">Activities</caption><thead><tr>${COLS.map(c => `<th scope="col" class="${c.c || ''}" aria-sort="${S.sortKey === c.k ? (S.sortDir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" data-sort="${c.k}">${c.l}</button></th>`).join('')}</tr></thead><tbody>${shown.map(a => `<tr><td>${esc(fd(a.date))}</td><td class="l"><a href="${actHref(a)}">${esc(a.title || a.sport)}</a><span class="sub">${esc(a.sport)}</span></td><td class="l hide-s">${esc(a.sport)}</td><td>${esc(fmtDur(a.durationS))}</td><td>${a.distanceKm ? distStr(a.group, a.distanceKm) : '—'}</td><td class="hide-s">${a.avgHr || '—'}</td><td class="hide-s">${a.load != null ? Math.round(a.load) : '—'}</td></tr>`).join('')}</tbody></table>${list.length > S.limit ? '<p class="show-more"><button type="button" class="btn ghost" id="list-more">Show more</button></p>' : ''}` : emptyState(S.range ? 'No activities match.' : NONE)}`;
     };
 
 
     /* ---------- Strength: weekly volume, e1RM small multiples, exercise table ---------- */
-    const sFirst = strength ? weekStart(strength.weekly[0].week) : '';
-    const sLastWeek = strength ? weekStart(today > strength.weekly[strength.weekly.length - 1].week ? today : strength.weekly[strength.weekly.length - 1].week) : '';
-    const sN = strength ? (dayNum(sLastWeek) - dayNum(sFirst)) / 7 + 1 : 0;
-    const sSpanStart = sFirst, sSpanEnd = strength ? addDays(sLastWeek, 6) : '';
-    const sWeeks = strength ? Array.from({ length: sN }, (_, i) => {
-      const wk = addDays(sFirst, i * 7), r = strength.weekly.find(x => x.week === wk);
-      return { week: wk, v: r ? r.volumeLb : 0, sets: r ? r.sets : 0, sessions: r ? r.sessions : 0 };
-    }) : [];
-    const monthTicks = (x0, x1, w, xOf, y, gapPx = 54) => {
-      let s = '', lastLx = -99, first = true;
-      for (let m = x0.slice(0, 7); m <= x1.slice(0, 7); m = fromNum(dayNum(`${m}-01`) + 31).slice(0, 7)) {
-        const d = m === x0.slice(0, 7) ? x0 : `${m}-01`, lx = xOf(d);
-        if (lx - lastLx < gapPx || lx > w - 24) continue;
-        lastLx = lx;
-        s += `<text x="${lx.toFixed(1)}" y="${y}">${esc(first || m.endsWith('-01') ? fd(d, 'monY') : fd(d, 'mon'))}</text>`; first = false;
+    /* Month: one bar per day from the matched lifting sessions; Quarter and Year: one bar per week from strength.json. */
+    const strRows = () => {
+      const B = bucketsOf();
+      if (B.daily) {
+        const m = new Map();
+        acts.filter(a => a.lift && inWin(a.date)).forEach(a => { const o = m.get(a.date) || { v: 0, sets: 0, sessions: 0 }; o.v += a.lift.volumeLb; o.sets += a.lift.sets; o.sessions++; m.set(a.date, o); });
+        return { B, rows: Array.from({ length: B.n }, (_, i) => { const d = B.from(i), o = m.get(d); return { from: d, to: d, v: o ? o.v : 0, sets: o ? o.sets : 0, sessions: o ? o.sessions : 0 }; }) };
       }
-      return s;
+      return { B, rows: Array.from({ length: B.n }, (_, i) => { const wk = B.from(i), r = strength.weekly.find(x => x.week === wk); return { from: wk, to: B.to(i), v: r ? r.volumeLb : 0, sets: r ? r.sets : 0, sessions: r ? r.sessions : 0 }; }) };
     };
+    const strTotals = () => { const { rows } = strRows(); return { n: rows.reduce((a, k) => a + k.sessions, 0), v: rows.reduce((a, k) => a + k.v, 0) }; };
     const drawStrWeekly = w => {
-      const left = 40, right = 6, topM = 6, plotH = 170, bottom = 22, H = topM + plotH + bottom, plotW = w - left - right, bw = plotW / sN;
+      const { B, rows } = strRows(), total = rows.reduce((a, k) => a + k.v, 0);
+      if (!total) return emptyState('No lifting in this period.');
+      const left = 40, right = 6, topM = 6, plotH = 170, bottom = 22, H = topM + plotH + bottom, plotW = w - left - right, bw = plotW / B.n;
       const x = i => left + i * bw;
-      const max = niceCeil(Math.max(...sWeeks.map(k => k.v), 1000));
+      const max = niceCeil(Math.max(...rows.map(k => k.v), 1000));
       const y = v => topM + plotH - (v / max) * plotH;
-      const avg = sWeeks.map((_, i) => { const sl = sWeeks.slice(Math.max(0, i - 3), i + 1); return sl.reduce((a, k) => a + k.v, 0) / sl.length; });
-      const total = sWeeks.reduce((a, k) => a + k.v, 0);
-      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`Weekly lifting volume in pounds, ${sN} weeks, ${nf(total, 0)} lb in total`)}">`;
+      const avg = rows.map((_, i) => { const sl = rows.slice(Math.max(0, i - 3), i + 1); return sl.reduce((a, k) => a + k.v, 0) / sl.length; });
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`Lifting volume in pounds per ${B.daily ? 'day' : 'week'}, ${PERIOD_LABEL[S.period].toLowerCase()}, ${nf(total, 0)} lb in total`)}">`;
       [0, .5, 1].forEach(f => { s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(max * f)}" y2="${y(max * f)}"/><text class="y" x="${left - 6}" y="${y(max * f) + 4}">${fmtK(max * f)}</text>`; });
-      const gapPx = bw > 6 ? 2 : bw > 3 ? 1 : .5, cur = sN - 1;
-      sWeeks.forEach((k, i) => { if (k.v > 0) s += `<rect x="${x(i) + gapPx / 2}" y="${y(k.v)}" width="${Math.max(1, bw - gapPx)}" height="${Math.max(1, topM + plotH - y(k.v))}" fill="${k.week === weekStart(today) ? COL.accent : COL.dim}"/>`; });
-      s += `<path d="${avg.map((v, i) => `${i ? 'L' : 'M'}${(x(i) + bw / 2).toFixed(1)},${y(v).toFixed(1)}`).join('')}" fill="none" stroke="${COL.text}" stroke-width="1" stroke-dasharray="3 3" stroke-linejoin="round" opacity=".7"/>`;
-      s += monthTicks(sSpanStart, sSpanEnd, w, d => left + ((dayNum(d) - dayNum(sFirst)) / 7) * bw, H - 6);
-      sWeeks.forEach((k, i) => {
-        const to = addDays(k.week, 6);
-        const tip = `<b>${fd(k.week, 'md')} – ${fd(to, 'md')}</b><br>${k.sessions ? `${nf(k.v, 0)} lb · ${k.sets} sets · ${k.sessions} ${k.sessions === 1 ? 'session' : 'sessions'}` : 'No lifting'}`;
+      const gapPx = bw > 6 ? 2 : bw > 3 ? 1 : .5, curFrom = B.daily ? today : weekStart(today);
+      rows.forEach((k, i) => { if (k.v > 0) s += `<rect x="${x(i) + gapPx / 2}" y="${y(k.v)}" width="${Math.max(1, bw - gapPx)}" height="${Math.max(1, topM + plotH - y(k.v))}" fill="${k.from === curFrom ? COL.accent : COL.dim}"/>`; });
+      if (!B.daily) s += `<path d="${avg.map((v, i) => `${i ? 'L' : 'M'}${(x(i) + bw / 2).toFixed(1)},${y(v).toFixed(1)}`).join('')}" fill="none" stroke="${COL.text}" stroke-width="1" stroke-dasharray="3 3" stroke-linejoin="round" opacity=".7"/>`;
+      s += winTicks(S.win.from, S.win.last, d => left + ((dayNum(d) - dayNum(S.win.from)) / B.unit) * bw, H - 6, 54, w - 24);
+      rows.forEach((k, i) => {
+        const head = B.daily ? fd(k.from, 'day') : `${fd(k.from, 'md')} – ${fd(k.to, 'md')}`;
+        const tip = `<b>${head}</b><br>${k.sessions ? `${nf(k.v, 0)} lb · ${k.sets} sets · ${k.sessions} ${k.sessions === 1 ? 'session' : 'sessions'}` : 'No lifting'}`;
         s += `<rect class="hv" x="${x(i)}" y="${topM}" width="${bw}" height="${plotH}" fill="transparent" data-tip="${esc(tip)}"/>`;
       });
       return `${s}</svg>`;
@@ -1283,24 +1342,40 @@
       if (!(t > 0)) return 'none';
       return t <= .5 ? `color-mix(in srgb, var(--series-dim) ${Math.round(Math.max(18, t * 200))}%, transparent)` : `color-mix(in srgb, var(--accent) ${Math.round((t - .5) * 200)}%, var(--series-dim))`;
     };
-    const mzMonths = (() => {
-      const ks = Object.keys(strength ? strength.muscles : {}); if (!ks.length) return [];
-      const out = []; const end = today.slice(0, 7) > ks[ks.length - 1] ? today.slice(0, 7) : ks[ks.length - 1];
-      for (let m = ks[0]; m <= end; m = fromNum(dayNum(`${m}-01`) + 31).slice(0, 7)) out.push(m);
-      return out;
-    })();
-    const mzState = { i: mzMonths.length - 1 };
+    /* The muscle window is the selected period, optionally stepped back by whole periods (off = 0, -1, ...). */
+    const mzState = { off: 0 };
+    const mzWin = () => {
+      const len = S.win.daily ? S.win.n : S.win.n * 7, from = addDays(S.win.from, mzState.off * len);
+      return { from, to: addDays(from, len - 1) };
+    };
+    const mzFirst = () => {
+      const days = Object.keys(strength.muscleDays || {});
+      return days.length ? days[0] : `${Object.keys(strength.muscles)[0]}-01`;
+    };
     const mzData = () => {
-      const m = mzMonths[mzState.i], scores = {}, sets = {};
-      const raw = strength.muscles[m] || {}, counts = (strength.muscleSets || {})[m] || {};
-      Object.keys(raw).forEach(g => { const k = MZ_ALIAS[g] || g; scores[k] = (scores[k] || 0) + raw[g]; });
-      const prim = {};
-      Object.keys(counts).forEach(g => { const k = MZ_ALIAS[g] || g; const c = counts[g]; sets[k] = (sets[k] || 0) + c[0] + c[1]; prim[k] = (prim[k] || 0) + c[0]; });
-      Object.keys(scores).forEach(g => { if (sets[g] == null) { sets[g] = Math.round(scores[g]); prim[g] = null; } });
-      return { m, scores, sets, prim, max: Math.max(0, ...Object.values(scores)) };
+      const { from, to } = mzWin(), scores = {}, sets = {}, prim = {};
+      const add = (g, p, sec, wt = 1) => { const k = MZ_ALIAS[g] || g; scores[k] = (scores[k] || 0) + (p + .5 * sec) * wt; sets[k] = (sets[k] || 0) + (p + sec) * wt; prim[k] = (prim[k] || 0) + p * wt; };
+      if (Object.keys(strength.muscleDays).length) {
+        Object.keys(strength.muscleDays).forEach(d => { if (d >= from && d <= to) Object.keys(strength.muscleDays[d]).forEach(g => add(g, strength.muscleDays[d][g][0], strength.muscleDays[d][g][1])); });
+      } else {
+        /* Older data only has calendar-month totals. Each month overlapping the window counts in proportion to the share of its days inside the window, so edge months are an approximation. */
+        Object.keys(strength.muscles).forEach(m => {
+          const m0 = `${m}-01`, mDays = dayNum(fromNum(dayNum(m0) + 31).slice(0, 7) + '-01') - dayNum(m0);
+          const frac = Math.max(0, Math.min(dayNum(to), dayNum(m0) + mDays - 1) - Math.max(dayNum(from), dayNum(m0)) + 1) / mDays;
+          if (!frac) return;
+          const counts = (strength.muscleSets || {})[m];
+          if (counts) Object.keys(counts).forEach(g => add(g, counts[g][0], counts[g][1], frac));
+          else Object.keys(strength.muscles[m]).forEach(g => { const k = MZ_ALIAS[g] || g, v = strength.muscles[m][g] * frac; scores[k] = (scores[k] || 0) + v; sets[k] = (sets[k] || 0) + v; });
+        });
+      }
+      return { from, to, scores, sets, prim, max: Math.max(0, ...Object.values(scores)) };
     };
     const mzTip = (d, g) => `<b>${esc(mzName(g))}</b> · ${nf(d.sets[g] || 0, 0)} sets${d.prim[g] != null ? ` (${nf(d.prim[g], 0)} primary)` : ''}`;
-    const mzMonthLabel = m => fd(`${m}-01`, 'monY');
+    const mzLabel = d => {
+      if (!mzState.off) return PERIOD_LABEL[S.period];
+      const to = d.to > today ? today : d.to, yr = d.from.slice(0, 4) !== to.slice(0, 4);
+      return `${fd(d.from, yr ? 'long' : 'md')} – ${fd(to, yr || to.slice(0, 4) !== today.slice(0, 4) ? 'long' : 'md')}`;
+    };
     const mzView = (name, regions, d) => {
       let s = `<svg class="mz-fig" viewBox="0 0 100 196" width="92" height="180" role="group" aria-label="${esc(`${name} view`)}"><ellipse class="mz-d" cx="50" cy="12.5" rx="7.6" ry="9.6"/>`;
       s += MZ_DECOR.map(p => `<path class="mz-d" d="${p}"/><path class="mz-d" d="${p}" transform="${MZ_MIRROR}"/>`).join('');
@@ -1313,12 +1388,14 @@
     };
     const drawMuscles = () => {
       const box = $('#muscles'); if (!box) return;
-      const d = mzData(), ranked = Object.keys(d.scores).sort((a, b) => d.scores[b] - d.scores[a] || a.localeCompare(b)).slice(0, 8);
+      const d = mzData(), label = mzLabel(d), ranked = Object.keys(d.scores).sort((a, b) => d.scores[b] - d.scores[a] || a.localeCompare(b)).slice(0, 8);
       const top = ranked.slice(0, 3).map(g => `${mzName(g)} ${nf(d.sets[g], 0)}`).join(', ');
-      const summary = ranked.length ? `${mzMonthLabel(d.m)}: most-worked muscle groups by sets: ${top}` : `${mzMonthLabel(d.m)}: no lifting`;
-      box.innerHTML = `<div class="mz-nav"><button type="button" class="mz-btn" data-mz="-1" aria-label="Previous month"${mzState.i <= 0 ? ' disabled' : ''}>←</button><span class="mz-month" aria-live="polite">${esc(mzMonthLabel(d.m))}</span><button type="button" class="mz-btn" data-mz="1" aria-label="Next month"${mzState.i >= mzMonths.length - 1 ? ' disabled' : ''}>→</button></div>
+      const summary = ranked.length ? `${label}: most-worked muscle groups by sets: ${top}` : `${label}: no lifting`;
+      const nav = `<div class="mz-nav"><button type="button" class="mz-btn" data-mz="-1" aria-label="Previous period"${d.from <= mzFirst() ? ' disabled' : ''}>←</button><span class="mz-month" aria-live="polite">${esc(label)}</span><button type="button" class="mz-btn" data-mz="1" aria-label="Next period"${mzState.off >= 0 ? ' disabled' : ''}>→</button></div>`;
+      if (!ranked.length) { box.innerHTML = `${nav}${emptyState('No lifting in this period.')}`; return; }
+      box.innerHTML = `${nav}
         <div class="mz-body"><div class="mz-figs" aria-label="${esc(summary)}"><figure>${mzView('Front', MZ_FRONT, d)}<figcaption>Front</figcaption></figure><figure>${mzView('Back', MZ_BACK, d)}<figcaption>Back</figcaption></figure></div>
-        <ol class="mz-rank" aria-label="${esc(`Top muscle groups, ${mzMonthLabel(d.m)}`)}">${ranked.length ? ranked.map(g => `<li data-g="${g}"><span class="n">${esc(mzName(g))}</span><span class="b"><i style="width:${Math.max(3, Math.round(d.scores[g] / d.max * 100))}%"></i></span><span class="v">${nf(d.sets[g], 0)}</span></li>`).join('') : '<li class="none">No lifting this month</li>'}</ol></div>
+        <ol class="mz-rank" aria-label="${esc(`Top muscle groups, ${label}`)}">${ranked.map(g => `<li data-g="${g}"><span class="n">${esc(mzName(g))}</span><span class="b"><i style="width:${Math.max(3, Math.round(d.scores[g] / d.max * 100))}%"></i></span><span class="v">${nf(d.sets[g], 0)}</span></li>`).join('')}</ol></div>
         <div class="legend"><span><i class="sw mz-scale"></i>fewer → more sets</span></div>`;
     };
     const wireMuscles = () => {
@@ -1326,26 +1403,30 @@
       bindTip(box);
       box.addEventListener('click', e => {
         const b = e.target.closest('[data-mz]'); if (!b || b.disabled) return;
-        mzState.i = Math.min(mzMonths.length - 1, Math.max(0, mzState.i + Number(b.dataset.mz))); drawMuscles();
+        mzState.off = Math.min(0, mzState.off + Number(b.dataset.mz)); drawMuscles();
         const nb = box.querySelector(`[data-mz="${b.dataset.mz}"]:not([disabled])`) || box.querySelector('.mz-btn:not([disabled])'); nb && nb.focus();
       });
       box.addEventListener('focusin', e => { const r = e.target.closest && e.target.closest('.mz-r'); r && showTip(r.getAttribute('data-tip'), 0, 0, r.getBoundingClientRect()); });
       box.addEventListener('focusout', e => { if (e.target.closest && e.target.closest('.mz-r')) hideTip(); });
       drawMuscles();
     };
-    const MULTI = strength ? strength.exercises.slice(0, 6) : [];
+    /* exercises restricted to the window: session counts, series and bests all come from the window's days */
+    const winExercises = () => (strength ? strength.exercises.map(e => {
+      const series = e.series.filter(p => inWin(p.date)), best = series.reduce((m, p) => (!m || p.v > m.v ? p : m), null);
+      return { ...e, series, sessions: series.length, winBest: best, best: e.best && inWin(e.best.date) ? e.best : null };
+    }).filter(e => e.series.length) : []);
     const drawMultiple = ex => w => {
       const left = 34, right = 8, top = 18, plotH = 62, bottom = 20, H = top + plotH + bottom, plotW = w - left - right;
-      const d0 = dayNum(sSpanStart), span = Math.max(1, dayNum(sSpanEnd) - d0);
+      const d0 = dayNum(S.win.from), span = Math.max(1, dayNum(S.win.last) - d0);
       const vs = ex.series.map(p => p.v), rng = Math.max(...vs) - Math.min(...vs), step = rng <= 40 ? 5 : rng <= 100 ? 10 : rng <= 250 ? 25 : 50;
       let lo = Math.floor(Math.min(...vs) / step) * step, hi = Math.ceil(Math.max(...vs) / step) * step;
       if (hi - lo < step) hi = lo + step;
       const x = d => left + ((dayNum(d) - d0) / span) * plotW, y = v => top + plotH - ((v - lo) / (hi - lo)) * plotH;
-      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`${ex.title}: estimated one-rep max, ${ex.series.length} sessions, ${nf(ex.series[0].v, 0)} to ${nf(ex.series[ex.series.length - 1].v, 0)} lb, best ${ex.best ? nf(ex.best.e1rmLb, 0) : ''} lb`)}">`;
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`${ex.title}: estimated one-rep max, ${ex.series.length} sessions, ${nf(ex.series[0].v, 0)} to ${nf(ex.series[ex.series.length - 1].v, 0)} lb, best ${nf(ex.winBest.v, 0)} lb`)}">`;
       [lo, hi].forEach(v => { s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(v)}" y2="${y(v)}"/><text class="y" x="${left - 6}" y="${y(v) + 4}">${nf(v, 0)}</text>`; });
-      s += monthTicks(sSpanStart, sSpanEnd, w, d => x(d), H - 4, 46);
+      s += winTicks(S.win.from, S.win.last, x, H - 4, 46, w - 24);
       if (ex.series.length > 1) s += `<path d="${ex.series.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${y(p.v).toFixed(1)}`).join('')}" fill="none" stroke="${COL.series}" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>`;
-      const best = ex.series.reduce((m, p) => (!m || p.v > m.v ? p : m), null);
+      const best = ex.winBest;
       ex.series.forEach(p => { if (p !== best) s += `<circle cx="${x(p.date).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="1.5" fill="${COL.series}"/>`; });
       const bx = x(best.date), by = y(best.v);
       const anchor = bx > w - right - 14 ? 'end' : bx < left + 14 ? 'start' : 'middle';
@@ -1356,7 +1437,7 @@
       });
       return `${s}</svg>`;
     };
-    const exRows = () => (strength ? strength.exercises.map(e => ({ ...e, last: e.series[e.series.length - 1].date, top: e.best ? e.best.e1rmLb : 0 })) : []);
+    const exRows = () => winExercises().map(e => ({ ...e, last: e.series[e.series.length - 1].date, top: e.winBest.v }));
     const EX_COLS = [
       { k: 'title', l: 'Exercise', v: e => e.title.toLowerCase(), c: 'l' },
       { k: 'sessions', l: 'Sessions', v: e => e.sessions },
@@ -1368,25 +1449,33 @@
     const bestSet = e => (e.best ? `${e.best.reps} × ${nf(e.best.weightLb, 1)}` : '—');
     const drawExTable = () => {
       const col = EX_COLS.find(c => c.k === SX.key), rows = exRows().sort((a, b) => ((col.v(a) < col.v(b) ? -1 : col.v(a) > col.v(b) ? 1 : 0) * SX.dir) || a.title.localeCompare(b.title));
-      $('#str-table').innerHTML = `<table class="data ex-table"><caption class="sr-only">Exercises by sessions, best set, best estimated one-rep max and last trained</caption><thead><tr>${EX_COLS.map(c => `<th scope="col" class="${c.c || ''}" aria-sort="${SX.key === c.k ? (SX.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" data-xsort="${c.k}">${c.l}</button></th>`).join('')}</tr></thead><tbody>${rows.map(e => `<tr><td class="l">${esc(e.title)}<span class="sub">${esc(bestSet(e))} lb</span></td><td>${e.sessions}</td><td class="hide-s">${esc(bestSet(e))} lb</td><td>${nf(e.top, 0)} lb</td><td>${esc(fd(e.last, 'md'))}${e.last.slice(0, 4) !== today.slice(0, 4) ? ` ${e.last.slice(2, 4) === '' ? '' : `’${e.last.slice(2, 4)}`}` : ''}</td></tr>`).join('')}</tbody></table>`;
+      const rowsAll = rows;
+      if (!rowsAll.length) { $('#str-table').innerHTML = emptyState('No sessions in this period.'); return; }
+      $('#str-table').innerHTML = `<table class="data ex-table"><caption class="sr-only">Exercises by sessions in the period, best set, best estimated one-rep max and last trained</caption><thead><tr>${EX_COLS.map(c => `<th scope="col" class="${c.c || ''}" aria-sort="${SX.key === c.k ? (SX.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" data-xsort="${c.k}">${c.l}</button></th>`).join('')}</tr></thead><tbody>${rows.map(e => `<tr><td class="l">${esc(e.title)}<span class="sub">${esc(bestSet(e))}${e.best ? ' lb' : ''}</span></td><td>${e.sessions}</td><td class="hide-s">${esc(bestSet(e))}${e.best ? ' lb' : ''}</td><td>${nf(e.top, 0)} lb</td><td>${esc(fd(e.last, 'md'))}${e.last.slice(0, 4) !== today.slice(0, 4) ? ` ${e.last.slice(2, 4) === '' ? '' : `’${e.last.slice(2, 4)}`}` : ''}</td></tr>`).join('')}</tbody></table>`;
     };
 
-    /* ---------- Body weight: smoothed change from the first day ---------- */
+    /* ---------- Body weight: smoothed change from the first day of the window ---------- */
+    const bwWin = () => {
+      const pts = bw ? bw.filter(p => inWin(p.date)) : [];
+      return pts.length >= 2 ? pts.map(p => ({ date: p.date, v: p.v - pts[0].v })) : null;
+    };
     const drawBw = w => {
+      const pts = bwWin();
+      if (!pts) return emptyState('No weight data in this period.');
       const left = 40, right = 8, top = 10, plotH = 110, bottom = 22, H = top + plotH + bottom, plotW = w - left - right;
-      const d0 = dayNum(bw[0].date), span = Math.max(1, dayNum(bw[bw.length - 1].date) - d0);
-      const vs = bw.map(p => p.v).concat(0), step = 1;
+      const d0 = dayNum(pts[0].date), span = Math.max(1, dayNum(pts[pts.length - 1].date) - d0);
+      const vs = pts.map(p => p.v).concat(0), step = 1;
       const lo = Math.floor(Math.min(...vs) / step) * step, hi = Math.max(lo + step * 2, Math.ceil(Math.max(...vs) / step) * step);
       const x = d => left + ((dayNum(d) - d0) / span) * plotW, y = v => top + plotH - ((v - lo) / (hi - lo)) * plotH;
-      const last = bw[bw.length - 1];
-      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`Body weight trend: ${signed(last.v)} lb since ${fd(bw[0].date, 'md')}`)}">`;
+      const last = pts[pts.length - 1];
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`Body weight trend: ${signed(last.v)} lb since ${fd(pts[0].date, 'md')}`)}">`;
       [lo, hi].forEach(v => { if (v !== 0) s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(v)}" y2="${y(v)}"/><text class="y" x="${left - 6}" y="${y(v) + 4}">${signed(v, 0)}</text>`; });
       s += `<line x1="${left}" x2="${w - right}" y1="${y(0)}" y2="${y(0)}" stroke="${COL.faint}" stroke-width="1" shape-rendering="crispEdges"/><text class="y" x="${left - 6}" y="${y(0) + 4}">0</text>`;
-      s += monthTicks(bw[0].date, last.date, w, d => x(d), H - 6, 54);
-      s += `<path d="${bw.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${y(p.v).toFixed(1)}`).join('')}" fill="none" stroke="${COL.text}" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round"/>`;
+      s += winTicks(pts[0].date, last.date, x, H - 6, 54, w - 24);
+      s += `<path d="${pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${y(p.v).toFixed(1)}`).join('')}" fill="none" stroke="${COL.text}" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round"/>`;
       s += `<circle cx="${x(last.date).toFixed(1)}" cy="${y(last.v).toFixed(1)}" r="3" fill="${COL.accent}"/>`;
       const cw = Math.max(3, plotW / (span + 1));
-      bw.forEach(p => { s += `<rect class="hv" x="${(x(p.date) - cw / 2).toFixed(1)}" y="${top}" width="${cw.toFixed(1)}" height="${plotH}" fill="transparent" data-tip="${esc(`<b>${esc(fd(p.date, 'long'))}</b><br>${signed(p.v)} lb`)}"/>`; });
+      pts.forEach(p => { s += `<rect class="hv" x="${(x(p.date) - cw / 2).toFixed(1)}" y="${top}" width="${cw.toFixed(1)}" height="${plotH}" fill="transparent" data-tip="${esc(`<b>${esc(fd(p.date, 'long'))}</b><br>${signed(p.v)} lb`)}"/>`; });
       return `${s}</svg>`;
     };
 
@@ -1397,7 +1486,9 @@
     const runSeason = mount($('#season'), drawSeason);
     const runRecHrv = well ? mount($('#rec-hrv'), drawTrend('hrv')) : () => {};
     const runRecRhr = well ? mount($('#rec-rhr'), drawTrend('rhr')) : () => {};
-    [$('#ribbon'), $('#weekly'), $('#yoy'), $('#season'), $('#rec-hrv'), $('#rec-rhr')].filter(Boolean).forEach(bindTip);
+    const runStrWeekly = strength ? mount($('#str-weekly'), drawStrWeekly) : () => {};
+    const runBw = bw ? mount($('#bw-chart'), drawBw) : () => {};
+    [$('#ribbon'), $('#weekly'), $('#yoy'), $('#season'), $('#rec-hrv'), $('#rec-rhr'), $('#str-weekly'), $('#bw-chart')].filter(Boolean).forEach(bindTip);
     bindCard($('#ribbon')); bindCard($('#season'));
     $('#season').addEventListener('click', e => {
       const h = e.target.closest('.s-hit');
@@ -1408,56 +1499,91 @@
     $('#yoy').addEventListener('pointermove', yoyHover);
     $('#yoy').addEventListener('pointerleave', () => { const xh = $('#yoy-xh'); xh && xh.setAttribute('visibility', 'hidden'); });
 
-    if (strength) {
-      const tot = strength.weekly.reduce((a, k) => a + k.volumeLb, 0), ses = strength.weekly.reduce((a, k) => a + k.sessions, 0);
-      $('#str-cap').textContent = `${ses} sessions · ${nf(tot, 0)} lb lifted since ${fd(strength.weekly[0].week, 'monY')}`;
-      mount($('#str-weekly'), drawStrWeekly); bindTip($('#str-weekly'));
-      wireMuscles();
-      const box = $('#str-multi');
-      if (box) {
-        box.innerHTML = MULTI.map((e, i) => `<figure><figcaption>${esc(e.title)}<span>${e.best ? `${nf(e.best.e1rmLb, 0)} lb` : ''}</span></figcaption><div class="chart" id="str-m${i}"></div></figure>`).join('');
-        MULTI.forEach((e, i) => { mount($(`#str-m${i}`), drawMultiple(e)); bindTip($(`#str-m${i}`)); });
-        drawExTable();
-        $('#str-table').addEventListener('click', e => {
-          const b = e.target.closest('[data-xsort]');
-          if (!b) return;
-          const k = b.dataset.xsort; SX.dir = SX.key === k ? -SX.dir : (k === 'title' ? 1 : -1); SX.key = k; drawExTable();
-        });
-      }
-    }
-    if (bw) {
-      const last = bw[bw.length - 1];
-      $('#bw-label').innerHTML = `<b>${signed(last.v)} lb</b> since ${esc(fd(bw[0].date, 'md'))}`;
-      mount($('#bw-chart'), drawBw); bindTip($('#bw-chart'));
-    }
-    /* start the ribbon scrolled to the most recent data */
     const rib = $('#ribbon');
-    rib.scrollLeft = Math.max(0, rib.scrollWidth - rib.clientWidth);
+    const setLegend = (id, html) => { const el = $(id); if (el) { el.innerHTML = html; el.hidden = !html; } };
+
+    /* strength, muscle map and body weight depend only on the period, not on the sport or metric toggles */
+    const refreshPeriodParts = () => {
+      const lbl = PERIOD_LABEL[S.period];
+      if (strength) {
+        const t = strTotals(), B = bucketsOf();
+        $('#str-cap').textContent = t.n ? `${lbl} · ${t.n} ${t.n === 1 ? 'session' : 'sessions'} · ${nf(t.v, 0)} lb lifted` : `${lbl} · no sessions`;
+        runStrWeekly();
+        setLegend('#str-wk-legend', t.n ? `<span><i class="sw bar"></i>${B.daily ? 'Day' : 'Week'}</span>${B.daily ? '' : '<span><i class="sw dash"></i>4-week average</span>'}` : '');
+        mzState.off = 0; drawMuscles();
+        const box = $('#str-multi');
+        if (box) {
+          const multi = winExercises().sort((a, b) => b.sessions - a.sessions).slice(0, 6);
+          box.innerHTML = multi.length ? multi.map((e, i) => `<figure><figcaption>${esc(e.title)}<span>${nf(e.winBest.v, 0)} lb</span></figcaption><div class="chart" id="str-m${i}"></div></figure>`).join('') : emptyState('No sessions in this period.');
+          multi.forEach((e, i) => { mount($(`#str-m${i}`), drawMultiple(e)); bindTip($(`#str-m${i}`)); });
+          $('#str-multi-legend').hidden = !multi.length;
+          drawExTable();
+        }
+      }
+      if (bw) {
+        const pts = bwWin();
+        $('#bw-label').innerHTML = pts ? `<b>${signed(pts[pts.length - 1].v)} lb</b> since ${esc(fd(pts[0].date, 'md'))}` : '';
+        $('#bw-label').hidden = !pts;
+        $('#bw-cap').textContent = `${lbl} · smoothed trend, change only`;
+        runBw();
+      }
+    };
+    if (strength && $('#str-multi')) {
+      $('#str-table').addEventListener('click', e => {
+        const b = e.target.closest('[data-xsort]');
+        if (!b) return;
+        const k = b.dataset.xsort; SX.dir = SX.key === k ? -SX.dir : (k === 'title' ? 1 : -1); SX.key = k; drawExTable();
+      });
+    }
+    if (strength) wireMuscles();
 
     const caps = () => {
-      const fa = filt();
-      $('#wk-cap').textContent = `${unitLabel()} per week${S.group === 'all' ? '' : ` · ${GROUP_LABEL[S.group]}`}`;
-      if (well) $('#rec-cap').textContent = `${S.year} · ${well.days.filter(d => d.date.startsWith(String(S.year))).length} nights`;
+      const fa = winActs(filt()), B = bucketsOf(), lbl = PERIOD_LABEL[S.period];
+      $('#wk-cap').textContent = `${unitLabel()} per ${B.daily ? 'day' : 'week'}${S.group === 'all' ? '' : ` · ${GROUP_LABEL[S.group]}`}`;
+      setLegend('#wk-legend', fa.length ? `<span><i class="sw bar"></i>${B.daily ? 'Day' : 'Week'}</span>${B.daily ? '' : '<span><i class="sw dash"></i>4-week average</span>'}${blocks.length ? '<span><i class="sw band"></i>Training block</span>' : ''}<span><i class="sw hatch"></i>Not synced</span>` : '');
+      if (well) {
+        const hrv = well.days.filter(d => inWin(d.date) && d.hrv != null).length, nights = well.days.filter(d => inWin(d.date)).length;
+        $('#rec-cap').textContent = `${lbl} · ${nights} ${nights === 1 ? 'night' : 'nights'}`;
+        $('#rec-legend').hidden = hrv < 2;
+      }
       $('#yoy-cap').textContent = `Cumulative ${isDur() ? 'time' : 'distance'} by day${cov.start.slice(5) !== '01-01' ? ` · ${cov.start.slice(0, 4)} from ${fd(cov.start, 'md')}` : ''}`;
-      weeklySummary = `Weekly training ${isDur() ? 'time' : 'distance'}, ${fa.length} activities across ${nWeeks} weeks`;
+      weeklySummary = `${isDur() ? 'Training time' : 'Training distance'} per ${B.daily ? 'day' : 'week'}, ${fa.length} activities across ${B.n} ${B.daily ? 'days' : 'weeks'}`;
+      $('#t-rib').textContent = isYear() ? 'Year ribbon' : 'Daily ribbon';
+      $('#t-rib').nextElementSibling.textContent = isYear() ? 'One cell per day, coloured by training time' : `One cell per day, ${lbl.toLowerCase()}, coloured by training time`;
+      rib.setAttribute('aria-label', `${isYear() ? 'Year ribbon' : 'Daily ribbon'}. Arrow keys move between days; Enter shows that day's activities.`);
+      setLegend('#rib-legend', fa.length ? '<span><i class="sw scale"></i>Less → more time</span><span><i class="sw hatch"></i>Not synced</span>' : '');
+    };
+    /* URL keeps the period (omitted for the default) and a selected single day */
+    const syncUrl = hash => {
+      const u = new URL(location.href);
+      if (S.period === 'quarter') u.searchParams.delete('period'); else u.searchParams.set('period', S.period);
+      if (S.range && S.range.from === S.range.to) u.searchParams.set('date', S.range.from); else u.searchParams.delete('date');
+      history.replaceState(null, '', u.pathname + u.search + hash);
     };
     const setRange = (from, to, label) => {
       S.range = from ? { from, to, label } : null; S.limit = 50;
-      const u = new URL(location.href);
-      if (from && from === to) u.searchParams.set('date', from); else u.searchParams.delete('date');
-      history.replaceState(null, '', u.pathname + u.search + (from ? '#activities' : ''));
+      syncUrl(from ? '#activities' : '');
       hideCard(); runRibbon(); drawList();
       if (from) $('#activities').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
     };
     const refresh = () => {
-      hideCard(); caps(); runSeason(); drawSeasonText(); runRecHrv(); runRecRhr(); runRibbon(); runWeekly(); runYoy(); drawMix(); drawMonths(); drawList();
-      $$('#year-chips button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.y === S.year)));
+      hideCard(); caps();
+      $('#yoy-sec').hidden = !isYear();
+      runSeason(); drawSeasonText(); runRecHrv(); runRecRhr(); runRibbon(); runWeekly(); if (isYear()) runYoy(); drawMix(); drawMonths(); drawList();
       $$('#metric-seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.metric === S.metric)));
       $$('#group-chips button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.g === S.group)));
     };
+    const setPeriod = k => {
+      if (k === S.period) return;
+      S.period = k; S.win = periodWin(k, today); S.range = null; S.limit = 50; kb = '';
+      $$('#period-seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.period === k)));
+      syncUrl('');
+      refresh(); refreshPeriodParts();
+      rib.scrollLeft = isYear() ? Math.max(0, rib.scrollWidth - rib.clientWidth) : 0;
+    };
+    $('#period-seg').addEventListener('click', e => { const b = e.target.closest('[data-period]'); if (b) setPeriod(b.dataset.period); });
     $('.t-controls').addEventListener('click', e => {
-      const m = e.target.closest('[data-metric]'), g = e.target.closest('[data-g]'), yb = e.target.closest('[data-y]');
-      if (yb) { S.year = +yb.dataset.y; refresh(); }
+      const m = e.target.closest('[data-metric]'), g = e.target.closest('[data-g]');
       if (m) S.metric = m.dataset.metric;
       if (g) { S.group = g.dataset.g; S.limit = 50; }
       if (m || g) refresh();
@@ -1470,17 +1596,18 @@
     });
     rib.addEventListener('keydown', e => {
       let nd = '';
-      const base = kb || (S.range ? S.range.from : lastDate);
+      const base = kb || (S.range ? S.range.from : isYear() ? lastDate : S.win.last);
       if (e.key === 'ArrowLeft') nd = addDays(base, -1);
       else if (e.key === 'ArrowRight') nd = addDays(base, 1);
-      else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { const y = +base.slice(0, 4) + (e.key === 'ArrowUp' ? 1 : -1); nd = `${y}${base.slice(4, 10)}`; if (!isDay(fromNum(dayNum(nd))) || fromNum(dayNum(nd)) !== nd) nd = `${y}-02-28`; }
+      else if (isYear() && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { const y = +base.slice(0, 4) + (e.key === 'ArrowUp' ? 1 : -1); nd = `${y}${base.slice(4, 10)}`; if (!isDay(fromNum(dayNum(nd))) || fromNum(dayNum(nd)) !== nd) nd = `${y}-02-28`; }
       else if (e.key === 'Enter' && kb) { const o = ribMap.get(kb); if (o) S.range && S.range.from === kb ? setRange('') : setRange(kb, kb, fd(kb)); e.preventDefault(); return; }
       else return;
       e.preventDefault();
-      if (nd < `${y0}-01-01` || nd > today || +nd.slice(0, 4) > y1) return;
+      if (isYear() ? (nd < `${y0}-01-01` || +nd.slice(0, 4) > y1) : nd < S.win.from) return;
+      if (nd > today) return;
       kb = nd; runRibbon();
       $('#rib-live').textContent = dayTip(kb).text;
-      const cw = (Math.max(rib.clientWidth, 760) - 40) / 366, cx = 38 + (doy(kb) - 1) * cw;
+      const cx = ribGeom.cx(kb);
       if (cx < rib.scrollLeft + 40) rib.scrollLeft = cx - 60; else if (cx > rib.scrollLeft + rib.clientWidth - 40) rib.scrollLeft = cx - rib.clientWidth + 60;
       const cell = rib.querySelector(`rect.day[data-date="${kb}"]`);
       if (cell) showCard(kb, 0, 0, cell.getBoundingClientRect());
@@ -1489,17 +1616,17 @@
     $('#weekly').addEventListener('click', e => {
       const h = e.target.closest('rect.hit');
       if (!h) return;
-      const from = addDays(wk0, +h.dataset.week * 7), to = addDays(from, 6);
-      setRange(from, to, `${fd(from, 'md')} – ${fd(to, 'md')}`);
+      const B = bucketsOf(), from = B.from(+h.dataset.b), to = B.to(+h.dataset.b);
+      setRange(from, to, B.daily ? fd(from) : `${fd(from, 'md')} – ${fd(to, 'md')}`);
     });
-    $('#months').addEventListener('click', e => { if (e.target.id === 'months-toggle') { S.monthsAll = !S.monthsAll; drawMonths(); } });
     $('#act-list').addEventListener('click', e => {
       const sb = e.target.closest('[data-sort]');
       if (sb) { const k = sb.dataset.sort; S.sortDir = S.sortKey === k ? -S.sortDir : (k === 'title' || k === 'sport' ? 1 : -1); S.sortKey = k; drawList(); }
       else if (e.target.id === 'list-more') { S.limit += 50; drawList(); }
       else if (e.target.closest('#clear-range')) setRange('');
     });
-    refresh();
+    refresh(); refreshPeriodParts();
+    rib.scrollLeft = isYear() ? Math.max(0, rib.scrollWidth - rib.clientWidth) : 0;
     if (location.hash === '#activities') $('#activities').scrollIntoView();
   };
 

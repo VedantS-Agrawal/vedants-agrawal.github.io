@@ -324,6 +324,8 @@ select.select { background: none; border: 0; border-bottom: 1px solid var(--line
 .t-controls { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 40px; margin: 0 0 8px; }
 .t-controls > div { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
 .t-controls .label { margin: 0; }
+.t-period { margin: -24px 0 32px; }
+.t-period + .cov { margin-top: 0; }
 .cov { font: 400 11px/1.5 var(--mono); letter-spacing: .02em; color: var(--muted); margin: -24px 0 40px; }
 .t-section { margin: 64px 0; }
 .t-section > header { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 24px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -783,7 +785,7 @@ table.data.ex-table td:first-child, table.data.ex-table th:first-child { white-s
 
 /* ---- muscle map (Strength) ---- */
 .mz-nav { display: flex; align-items: center; gap: 14px; font: 400 12px/1 var(--mono); color: var(--text); margin: 0 0 16px; }
-.mz-month { min-width: 82px; text-align: center; font-variant-numeric: tabular-nums; }
+.mz-month { min-width: 82px; max-width: 60vw; text-align: center; font-variant-numeric: tabular-nums; }
 .mz-btn { font: inherit; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 2px; width: 28px; height: 28px; cursor: pointer; padding: 0; }
 .mz-btn:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); }
 .mz-btn:disabled { opacity: .3; cursor: default; }

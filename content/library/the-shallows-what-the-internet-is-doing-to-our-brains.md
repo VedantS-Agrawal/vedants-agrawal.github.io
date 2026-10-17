@@ -3,9 +3,9 @@ title: 'The Shallows: What the Internet Is Doing to Our Brains'
 type: literature
 date: '2022-11-13'
 published: '2026-10-16'
-updated: '2026-10-16'
+updated: '2026-10-17'
 created: '2026-10-16'
-modified: '2026-10-16'
+modified: '2026-10-17'
 ---
 
 Carr, after McLuhan: outside of the content a medium carries, the medium itself changes our patterns of perception — how we think as individuals and as a society.
