@@ -809,3 +809,33 @@ table.data.ex-table td:first-child, table.data.ex-table th:first-child { white-s
 .mz-rank .none { display: block; color: var(--faint); border: 0; }
 @media (prefers-reduced-motion: reduce) { .mz-r { transition: none; } }
 .legend .mz-scale { width: 64px; height: 8px; background: linear-gradient(to right, transparent, var(--series-dim), var(--accent)); border: 1px solid var(--line-strong); background-origin: border-box; }
+
+/* ------------------------------------------------------------------
+   Sleep (/stream/sleep/)
+------------------------------------------------------------------- */
+.train-cta a + a { margin-left: 24px; }
+.sl-scroll { overflow-x: auto; padding-bottom: 8px; }
+.sl-scroll svg { max-width: none; }
+.sl-heads { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 24px 32px; margin: 0; }
+.sl-heads dt { margin: 0 0 4px; font: 400 11px/1.4 var(--mono); letter-spacing: .02em; text-transform: lowercase; color: var(--faint); }
+.sl-heads dd { margin: 0; font: 400 19px/1.3 var(--mono); }
+.sl-heads dd small { display: block; margin-top: 4px; font: 400 11px/1.4 var(--mono); color: var(--muted); }
+.sl-signals figure { margin: 0 0 20px; min-width: 0; }
+.sl-signals figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font: 500 13px/1.4 var(--font); letter-spacing: -.005em; }
+.sl-signals figcaption span { flex: none; font: 400 11px/1.4 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.sl-note { margin: 12px 0 0; font: 400 12px/1.6 var(--mono); color: var(--muted); }
+.sl-note:empty { display: none; }
+.sl-card .stages { margin-top: 8px; }
+.sl-card .seg-awake { background: rgba(194, 179, 210, .3); opacity: 1; }
+.sw-dot { display: inline-block; width: 8px; height: 8px; margin-right: 10px; border-radius: 1px; }
+.legend .dot-t { width: 6px; height: 6px; border-radius: 50%; background: var(--text); }
+.legend .nap { width: 10px; height: 3px; background: var(--series); }
+.legend .scale-sl { background: linear-gradient(to right, #3b2d57, #cbbfe3); }
+.legend .dot-hi { width: 8px; height: 8px; border-radius: 50%; background: var(--text); }
+.legend .dot-lo { width: 8px; height: 8px; border-radius: 50%; background: var(--series-dim); }
+.chart rect.kbf { fill: var(--wash); stroke: var(--text); stroke-width: 1; }
+.chart circle.pt { cursor: default; }
+.chart circle.pt.kbf { stroke: var(--accent); stroke-width: 1.5; }
+.sl-rib rect.day[data-has]:hover { stroke: var(--text); stroke-width: 1; }
+.sl-rib rect.day.kbf { fill-opacity: 1; stroke: var(--text); stroke-width: 1.25; }
+.sl-scroll:focus-visible, .sl-rib:focus-visible, .chart:focus-visible { outline-offset: 2px; }

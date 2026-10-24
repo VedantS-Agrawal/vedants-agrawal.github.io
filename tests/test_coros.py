@@ -64,7 +64,8 @@ def wellness_texts(d, p):
     return {
         'querySleepOverview': f"Sleep Overview\n========================\nNote: each record below is dated by its wake-up day.\n\n{piso}\nSleep detail for this day is not available yet.\n\n{iso}\nSleep Score: 87\n"
             "Daily Sleep: 8h 4min (incl. naps)\nMain Sleep (asleep): 7h 54min\nMain Sleep Period (incl. awake): 8h 5min\nSleep metrics scope: daily\nDeep Sleep Ratio: 21%\n"
-            "Awake Time: 11 min\nAwake Count (>5 min): 0\nNaps Total: 10 min\n",
+            "Awake Time: 11 min\nAwake Count (>5 min): 0\n"
+            f"Main Sleep Window: {piso} 23:12 - {iso} 07:13\nNaps Total (asleep): 10 min\nNaps Period (incl. awake): 12 min\nNap Window: {iso} 15:34 - {iso} 15:46\n",
         'querySleepHrv': f"Sleep HRV — {piso} to {iso}\n========================\nNote: dates are wake-up days.\n\nHRV Assessment — Last 2 days\n========================\n\n{iso}:\n"
             f"  HRV Avg: 90 ms — Above normal\n  Normal Range: 61 - 83 ms\n  Baseline: 72 ms\n{piso}: no official sleep HRV value for this day; raw HRV points omitted.\n\n"
             f"Sleep HRV Time Series — Last 2 days\n========================\n\n{iso}:\n  timestamp=1791782090, timezone=-20, hrv=40 ms, status=4, confidence=100000\n",
@@ -244,7 +245,8 @@ class CorosTests(unittest.TestCase):
         t = self.texts(); d, p = self.days().isoformat(), self.days(1).isoformat()
         sleep = c.parse_sleep_overview(t['querySleepOverview'])
         self.assertEqual(list(sleep), [d])   # a day with no detail yet is skipped
-        self.assertEqual(sleep[d][0], {'sleepScore': 87, 'sleepS': 28440, 'awakeS': 660})   # main sleep, not the nap-inclusive total
+        self.assertEqual(sleep[d][0], {'sleepScore': 87, 'sleepS': 28440, 'inBedS': 29100, 'awakeS': 660, 'awakeCount': 0,
+                                       'bedDate': p, 'bedtime': '23:12', 'wake': '07:13', 'napS': 600, 'napAt': '15:34'})   # main sleep, not the nap-inclusive total
         self.assertIn('Main Sleep (asleep)', sleep[d][1])
         hrv = c.parse_sleep_hrv(t['querySleepHrv'])
         self.assertEqual(hrv, {d: ({'hrv': 90, 'hrvLow': 61, 'hrvHigh': 83}, hrv[d][1])})
@@ -254,7 +256,7 @@ class CorosTests(unittest.TestCase):
         self.assertEqual(list(c.parse_stress(t['queryStressLevel'])), [d]); self.assertEqual(c.parse_stress(t['queryStressLevel'])[d][0], {'stress': 14})
         health = c.parse_daily_health(t['queryDailyHealthData'])
         self.assertEqual(list(health), [d])   # 0 steps / 0 kcal means nothing recorded: omitted
-        self.assertEqual(health[d][0], {'steps': 7759, 'calories': 1043, 'deepS': 5460, 'lightS': 15300, 'remS': 3480, 'awakeS': 3660})
+        self.assertEqual(health[d][0], {'steps': 7759, 'calories': 1043, 'deepS': 5460, 'lightS': 15300, 'remS': 3480, 'awakeS': 3660, 'sleepHrAvg': 51, 'sleepHrMin': 38})
         self.assertEqual(c.parse_training_load(t['queryTrainingLoadAssessment'])[d][0], {'acuteLoad': 34, 'chronicLoad': 55, 'loadRatio': 0.61})
         self.assertEqual(c.parse_recovery(t['queryRecoveryStatus']), 100)
         self.assertEqual((c.duration_s('7h 54min'), c.duration_s('11 min'), c.duration_s('2h'), c.duration_s('none')), (28440, 660, 7200, None))
@@ -269,7 +271,9 @@ class CorosTests(unittest.TestCase):
         rec = common.read_json(self.vault / f'_System/wellness/{d}.json')
         self.assertEqual((rec['source'], set(rec)), ('COROS', {'source', 'importedAt', 'public', 'private'}))
         self.assertEqual(rec['public'], {'sleepS': 28440, 'deepS': 5460, 'lightS': 15300, 'remS': 3480, 'awakeS': 660, 'sleepScore': 87, 'hrv': 90, 'hrvLow': 61, 'hrvHigh': 83,
-                                         'restingHr': 53, 'avgHr': 55, 'stress': 14, 'steps': 7759, 'calories': 1043, 'acuteLoad': 34, 'chronicLoad': 55, 'loadRatio': 0.61, 'recoveryPct': 100})
+                                         'restingHr': 53, 'avgHr': 55, 'stress': 14, 'steps': 7759, 'calories': 1043, 'acuteLoad': 34, 'chronicLoad': 55, 'loadRatio': 0.61, 'recoveryPct': 100,
+                                         'inBedS': 29100, 'awakeCount': 0, 'bedDate': self.days(1).isoformat(), 'bedtime': '23:12', 'wake': '07:13', 'napS': 600, 'napAt': '15:34',
+                                         'sleepHrAvg': 51, 'sleepHrMin': 38})
         self.assertEqual(set(rec['private']['raw']), set(WELLNESS_TOOLS))
         self.assertEqual(20 - budget.left, 8)   # one call per tool for a 14-day range
         # Same data again: nothing changes and the file is not touched.
@@ -282,6 +286,36 @@ class CorosTests(unittest.TestCase):
         self.assertEqual(common.read_json(path)['public']['steps'], 8000)
         with patch.object(c, 'tool', FakeCoros([], wellness={**t, 'queryRecoveryStatus': 'Recovery: 40%'})): c.wellness_pass(self.days(13), self.days(), c.Budget(20))
         self.assertEqual(common.read_json(path)['public']['recoveryPct'], 40)
+
+    def test_sleep_overview_details_in_the_formats_coros_prints(self):
+        text = ("2026-10-18\nSleep Score: 80\nDaily Sleep: 9h 15min (incl. naps)\nMain Sleep (asleep): 9h 15min\nMain Sleep Period (incl. awake): 9h 54min\n"
+                "Awake Time: 39 min\nAwake Count (>5 min): 3\nMain Sleep Window: 2026-10-17 23:57 - 2026-10-18 09:51\nNaps Total: 0 min\n\n"
+                "2026-10-19\nSleep Score: 69\nMain Sleep (asleep): 6h 13min\nMain Sleep Period (incl. awake): 7h 19min\nAwake Time: 1h 6min\nAwake Count (>5 min): 1\n"
+                "Main Sleep Window: 2026-10-19 00:43 - 2026-10-19 08:02\nNaps Total (asleep): 1h 10min\nNaps Period (incl. awake): 1h 21min\n"
+                "Nap Window: 2026-10-19 13:18 - 2026-10-19 14:04\nNap Window: 2026-10-19 16:21 - 2026-10-19 16:56")
+        got = c.parse_sleep_overview(text)
+        self.assertEqual(got['2026-10-18'][0], {'sleepScore': 80, 'sleepS': 33300, 'inBedS': 35640, 'awakeS': 2340, 'awakeCount': 3,
+                                                'bedDate': '2026-10-17', 'bedtime': '23:57', 'wake': '09:51'})   # bed the evening before, no naps
+        night = got['2026-10-19'][0]
+        self.assertEqual((night['bedDate'], night['bedtime'], night['wake'], night['inBedS'], night['awakeCount']), ('2026-10-19', '00:43', '08:02', 26340, 1))
+        self.assertEqual((night['napS'], night['napAt']), (4200, '13:18'))   # first nap window starts the tick
+        self.assertNotIn('bedtime', c.parse_sleep_overview('2026-10-20\nSleep Score: 70\nMain Sleep (asleep): 7h')['2026-10-20'][0])   # no window, no clock fields
+        hr = c.parse_daily_health('--- 20261019 ---\nSteps: 10 | Calories: 5 kcal\nSleep Summary:\n  Total: 7h 19min | Deep: 51 min\n  Sleep HR: Avg 55 bpm | Min 47 bpm | Max 86 bpm')
+        self.assertEqual((hr['2026-10-19'][0]['sleepHrAvg'], hr['2026-10-19'][0]['sleepHrMin']), (55, 47))
+
+    def test_stored_raw_text_fills_new_fields_without_api_calls(self):
+        d = '2026-10-19'; folder = self.vault / '_System/wellness'; folder.mkdir(parents=True)
+        raw = {'querySleepOverview': "2026-10-19\nSleep Score: 69\nMain Sleep (asleep): 6h 13min\nMain Sleep Period (incl. awake): 7h 19min\nAwake Time: 1h 6min\nAwake Count (>5 min): 1\n"
+                                     "Main Sleep Window: 2026-10-19 00:43 - 2026-10-19 08:02\nNaps Total (asleep): 26 min\nNap Window: 2026-10-19 15:34 - 2026-10-19 16:05",
+               'queryDailyHealthData': "--- 20261019 ---\nSteps: 6,673 | Calories: 421 kcal\nSleep Summary:\n  Total: 7h 19min | Deep: 51 min\n  Sleep HR: Avg 55 bpm | Min 47 bpm | Max 86 bpm"}
+        old = {'sleepS': 22380, 'sleepScore': 69, 'awakeS': 3960, 'steps': 6673, 'napS': 99}   # a stale value that raw no longer supports is replaced
+        common.write_json(folder / f'{d}.json', {'source': 'COROS', 'importedAt': 'x', 'public': old, 'private': {'raw': raw}}, True)
+        self.assertEqual(c.migrate_wellness(), {d})
+        pub = common.read_json(folder / f'{d}.json')['public']
+        self.assertEqual({k: pub[k] for k in c.SLEEP_EXTRA}, {'bedtime': '00:43', 'bedDate': d, 'wake': '08:02', 'inBedS': 26340, 'awakeCount': 1, 'napS': 1560, 'napAt': '15:34', 'sleepHrAvg': 55, 'sleepHrMin': 47})
+        self.assertEqual((pub['sleepS'], pub['steps']), (22380, 6673))   # fields from before are not touched
+        before = (folder / f'{d}.json').read_bytes()
+        self.assertEqual(c.migrate_wellness(), set()); self.assertEqual((folder / f'{d}.json').read_bytes(), before)   # idempotent: the file is not rewritten
 
     def test_recovery_is_only_attached_to_today_and_missing_means_omitted(self):
         fake = FakeCoros([], wellness=self.texts())

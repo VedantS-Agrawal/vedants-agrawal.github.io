@@ -547,8 +547,10 @@ def sync_notes(entries):
 WELLNESS_CALLS = 60     # MCP calls per run for the daily wellness import
 SLEEP_CHUNK_DAYS = 120  # querySleepOverview range per call
 HRV_CHUNK_DAYS = 28     # querySleepHrv returns a long raw series per night, so keep ranges short
+# Night details beyond the stage totals: clock times are local "HH:MM" and stay minute-exact here (the publisher rounds them).
+SLEEP_EXTRA = ('bedtime', 'bedDate', 'wake', 'inBedS', 'awakeCount', 'napS', 'napAt', 'sleepHrAvg', 'sleepHrMin')
 WELLNESS_FIELDS = ('sleepS', 'deepS', 'lightS', 'remS', 'awakeS', 'sleepScore', 'hrv', 'hrvLow', 'hrvHigh', 'restingHr', 'avgHr',
-                   'stress', 'steps', 'calories', 'acuteLoad', 'chronicLoad', 'loadRatio', 'recoveryPct')
+                   'stress', 'steps', 'calories', 'acuteLoad', 'chronicLoad', 'loadRatio', 'recoveryPct') + SLEEP_EXTRA
 
 def wellness_dir(): return vault() / '_System/wellness'
 
@@ -575,15 +577,26 @@ def put_if(fields, key, value, positive=False):
     fields[key] = value
 
 def parse_sleep_overview(text):
-    """Sleep Overview: score, main sleep (asleep) and awake time, dated by wake-up day."""
+    """Sleep Overview: score, main sleep (asleep), time in bed, awake time and count, the main sleep window and naps,
+    dated by wake-up day. Clock times are the local "HH:MM" COROS prints."""
     out = {}
     for d, block in day_blocks(text).items():
         f = {}
         put_if(f, 'sleepScore', wnum(block, 'Sleep Score'), True)
         m = re.search(r'Main Sleep \(asleep\):\s*([^\n]+)', block)
         put_if(f, 'sleepS', duration_s(m[1]) if m else None, True)
+        m = re.search(r'Main Sleep Period \(incl\. awake\):\s*([^\n]+)', block)
+        if m and f: put_if(f, 'inBedS', duration_s(m[1]), True)
         m = re.search(r'Awake Time:\s*([^\n]+)', block)
         if m and f: put_if(f, 'awakeS', duration_s(m[1]), True)
+        if f: put_if(f, 'awakeCount', wnum(block, 'Awake Count (>5 min)'))
+        m = re.search(r'Main Sleep Window:\s*(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})\s*-\s*\d{4}-\d{2}-\d{2} (\d{2}:\d{2})', block)
+        if m and f: f['bedDate'], f['bedtime'], f['wake'] = m[1], m[2], m[3]
+        m = re.search(r'Naps Total(?: \(asleep\))?:\s*([^\n]+)', block)
+        if m and f:
+            put_if(f, 'napS', duration_s(m[1]), True)
+            first = re.search(r'Nap Window:\s*\d{4}-\d{2}-\d{2} (\d{2}:\d{2})', block)
+            if first and f.get('napS'): f['napAt'] = first[1]
         if f: out[d] = (f, block)
     return out
 
@@ -632,6 +645,11 @@ def parse_daily_health(text):
             for key, label in (('deepS', 'Deep'), ('lightS', 'Light'), ('remS', 'REM'), ('awakeS', 'Awake')):
                 part = re.search(label + r':\s*((?:\d+\s*h)?\s*(?:\d+\s*min)?)', m[0])
                 put_if(f, key, duration_s(part[1]) if part else None, True)
+        m = re.search(r'Sleep HR:[^\n]*', block)
+        if m:
+            for key, label in (('sleepHrAvg', 'Avg'), ('sleepHrMin', 'Min')):
+                hr = re.search(label + r'\s+(\d+)\s*bpm', m[0])
+                put_if(f, key, int(hr[1]) if hr else None, True)
         if f: out[d] = (f, block)
     return out
 
@@ -701,11 +719,35 @@ def wellness_pass(start, end, budget, errors=None):
         if not day['public']: continue
         path = folder / f'{d}.json'
         old = read_json(path)
-        public = {k: v for k, v in {**(old.get('public') or {}), **day['public']}.items() if k in WELLNESS_FIELDS}
+        earlier = dict(old.get('public') or {})
+        if 'querySleepOverview' in day['raw']:   # a nap COROS no longer reports must not linger
+            for k in ('napS', 'napAt'):
+                if k not in day['public']: earlier.pop(k, None)
+        public = {k: v for k, v in {**earlier, **day['public']}.items() if k in WELLNESS_FIELDS}
         if old and (old.get('public') or {}) == public: continue
         raw = {**((old.get('private') or {}).get('raw') or {}), **day['raw']}
         write_json(path, {'source': 'COROS', 'importedAt': now(), 'public': {k: public[k] for k in WELLNESS_FIELDS if k in public}, 'private': {'raw': raw}}, True)
         changed.add(d)
+    return changed | migrate_wellness()
+
+def migrate_wellness():
+    """Fill the night-detail fields from the raw COROS text already stored for every past day (no API calls).
+    Files whose public part does not change are left untouched. Returns the set of changed dates."""
+    changed, folder = set(), wellness_dir()
+    for path in sorted(folder.glob('*.json')) if folder.exists() else []:
+        old = read_json(path)
+        raw = (old.get('private') or {}).get('raw') or {}
+        fresh = {}
+        for name, parser in (('querySleepOverview', parse_sleep_overview), ('queryDailyHealthData', parse_daily_health)):
+            if not raw.get(name): continue
+            for k, v in (parser(raw[name]).get(path.stem) or ({}, ''))[0].items():
+                if k in SLEEP_EXTRA: fresh.setdefault(k, v)
+        public = {k: v for k, v in (old.get('public') or {}).items() if k not in SLEEP_EXTRA}
+        public.update(fresh)
+        public = {k: public[k] for k in WELLNESS_FIELDS if k in public}
+        if not old or (old.get('public') or {}) == public: continue
+        old['public'] = public; old['importedAt'] = now()
+        write_json(path, old, True); changed.add(path.stem)
     return changed
 
 def wellness_status():
@@ -744,6 +786,7 @@ def run(full=False, query=True, detail=None, fit=None, source='COROS MCP'):
     try:
         today = today_local()
         changed |= migrate_store()
+        changed |= {'wellness:' + d for d in migrate_wellness() if d != today.isoformat()}
         if not store().exists() or not any(store().glob('*.json')): changed |= import_records(seed_history(), 'COROS historical snapshot')
         if query:
             start = date(2015, 1, 1) if full else today - timedelta(days=30)
@@ -767,7 +810,7 @@ def backfill(detail=None, fit=None): return run(query=False, detail=detail, fit=
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description='COROS activity importer')
-    p.add_argument('action', choices=['seed', 'sync', 'full-sync', 'backfill', 'wellness'])
+    p.add_argument('action', choices=['seed', 'sync', 'full-sync', 'backfill', 'wellness', 'reparse'])
     p.add_argument('--start', type=date.fromisoformat, help='wellness: first day, YYYY-MM-DD (default: 14 days ago)')
     p.add_argument('--end', type=date.fromisoformat, help='wellness: last day, YYYY-MM-DD (default: today)')
     p.add_argument('--detail', type=int, help='MCP calls to spend on detail and laps (2 per activity; default 60)')
@@ -777,6 +820,7 @@ if __name__ == '__main__':
         store().mkdir(parents=True, exist_ok=True)
         c = import_records(seed_history(), 'COROS historical snapshot'); sync_notes(all_entries()); refresh_status('COROS historical snapshot', c); print(len(c))
     elif a.action == 'backfill': print(backfill(a.detail, a.fit))
+    elif a.action == 'reparse': print(f'{len(migrate_wellness())} wellness days updated from stored text')
     elif a.action == 'wellness':
         errors, budget, today = [], Budget(WELLNESS_CALLS), today_local()
         start, end = a.start or today - timedelta(days=13), a.end or today

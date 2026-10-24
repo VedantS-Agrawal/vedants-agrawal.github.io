@@ -16,6 +16,7 @@
     { title: 'Writing', href: '/writing/', keys: 'essays posts reflections notes articles' },
     { title: 'Library', href: '/library/', keys: 'books reading films papers podcasts projects shelves' },
     { title: 'Training history', href: '/stream/training/', keys: 'running cycling swimming workouts activities sport' },
+    { title: 'Sleep', href: '/stream/sleep/', keys: 'sleep bedtime hrv rest nights schedule' },
     { title: 'Archive', href: '/archive/', keys: 'months years past' },
     { title: 'About', href: '/about.html', keys: 'bio contact links me' }
   ];

@@ -248,3 +248,29 @@ Absolute body weight, body composition, Hevy notes and descriptions appear in no
 Front end: activity pages show a lifts table per exercise (warm-ups faint); `/stream/training/` has a **Strength** section (weekly volume, up to six e1RM small multiples on one shared time axis, a sortable exercise table, and a monthly **muscle map**: front and back figures filled by each group's score for the selected month, transparent to `--series-dim` to `--accent` at the month's maximum, with a month selector and a ranked list) and a **Body weight** section (change line on a zero baseline). Both sections are absent when their data file is.
 
 Automation: `auto_sync.py` runs COROS, then `hevy_sync.sync()`, then `weight.sync()`; neither can stop the run, and any change they make counts toward publishing.
+
+## 12. Sleep
+
+**Importer fields** (`scripts/coros_sync.py`, `_System/wellness/YYYY-MM-DD.json` → `public`). Besides the stage totals in §8, each night stores, all parsed from the text COROS already returns (no extra calls): `bedtime`, `wake` (local `HH:MM` from *Main Sleep Window*), `bedDate` (the date the window began, so a bedtime before midnight is unambiguous), `inBedS` (*Main Sleep Period*, awake time included), `awakeCount`, `napS` (*Naps Total*, omitted when 0), `napAt` (start of the first nap), `sleepHrAvg`, `sleepHrMin` (*Sleep HR*). These stay minute-exact in the private store. `migrate_wellness()` refills them from the stored raw text for every past day (`coros_sync.py reparse`, and at the end of every wellness pass); a file is rewritten only when its public part changes.
+
+**Respiration is not collected.** `queryHealthCheckTimeSeries` returns respiration only for deliberate wellness-check measurements; for this account every date range returns "No complete health check time series data", so there is nothing to store. The page shows a respiration chart only if `respiration` ever appears in `sleep.json`.
+
+**Tags.** A daily note (`type: daily`, in `Daily/`, with `date`) may carry `sleep_tags: [late meal, caffeine]` (a list or a comma-separated string). The tags attach to the night whose wake date equals the note's `date`. The notes stay private; only the lowercased tag strings are published.
+
+**`/data/sleep.json`** (written with `wellnessPublic`, when at least one night has a sleep total; oldest first, dated by wake day):
+
+```jsonc
+{ "nights": [ { "date": "2026-10-19",
+    "bedtime": "00:45", "wake": "08:00",              // rounded to the nearest 15 minutes
+    "asleepS": 22380, "inBedS": 26340, "efficiency": 85,   // efficiency = asleep / in bed, percent
+    "deepS": 3060, "lightS": 14280, "remS": 5040, "awakeS": 3960, "awakeCount": 1,
+    "napS": 1560, "napAt": "15:30",                   // napAt rounded; a "nap" starting at 21:00 or later is dropped
+    "score": 69, "hrv": 74, "hrvLow": 63, "hrvHigh": 85,
+    "sleepHrMin": 47, "sleepHrAvg": 55, "restingHr": 56,
+    "respiration": 14.5,                              // only if the importer ever stores it
+    "tags": ["late meal", "caffeine"] } ] }
+```
+
+Every field except `date` and `asleepS` is optional. **Privacy:** bedtime, wake and nap times are rounded to 15 minutes in the publisher (`sleep_of`), computed across midnight from `bedDate`; exact times, `bedDate`, and the night-detail fields never appear in `wellness.json`. A test builds a vault with exact times and asserts none of them appears anywhere under `content/`.
+
+**Page `/stream/sleep/`** (shell in `SHELLS`; linked from the Stream page next to *Training history →*, from the homepage intro nav, the search palette, and the `[[Sleep]]` hub link). Period switch Month (30 days) · Quarter (12 weeks, default) · Year (52 weeks), `?period=`. Sections: Schedule (one bar per night on a clock axis, 9 pm to 11 am and widened in whole hours when a night falls outside; segments show the night's stage mix, not stage timing; median bed-to-wake band; tag markers; nap ticks), Averages (asleep, efficiency, bedtime regularity as the standard deviation of bedtime, HRV, lowest sleeping HR, each with the change from the previous equal-length period; no target anywhere), Balance vs usual (running sum of asleep minus the median of the previous 28 nights), Stages, Overnight signals, Weekday vs weekend (Friday and Saturday evenings are weekend nights; social jetlag is the gap between the two groups' bed-to-wake midpoints), Sleep & training (training load of the day before, from `training.json`, against sleep score or next-morning HRV; a direction sentence appears only with 10 or more nights), Sleep ribbon, Tags (shown when any night is tagged).

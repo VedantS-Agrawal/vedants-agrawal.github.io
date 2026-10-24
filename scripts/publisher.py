@@ -4,12 +4,12 @@ Rules (docs/Architecture.md §1–2): a note is public when `visibility: public`
 property is absent and its type defaults to public (activity, block, month). A public note with a problem is held
 back and reported; it never blocks the rest of the site.
 """
-import argparse, hashlib, html, json, re, shutil, subprocess, sys
+import argparse, hashlib, html, json, math, re, shutil, subprocess, sys
 from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from common import *
-import dates, hevy_sync, weight
+import coros_sync, dates, hevy_sync, weight
 
 PUBLIC_TYPES = ('activity', 'block', 'month')
 SKIP_FOLDERS = ('_System/', 'Templates/', 'Guide/')
@@ -20,7 +20,7 @@ PREFIX = {'project': 'projects', 'activity': 'stream/training', 'block': 'traini
 ENTRY_KEYS = ['status', 'medium', 'creator', 'consumption_status', 'finished']
 REPORT = LOCAL / 'last-build.json'
 HUBS = {'stream': '/stream/', 'writing': '/writing/', 'library': '/library/', 'training': '/stream/training/',
-        'about': '/about.html', 'colophon': '/colophon.html', 'archive': '/archive/', 'home': '/'}
+        'sleep': '/stream/sleep/', 'about': '/about.html', 'colophon': '/colophon.html', 'archive': '/archive/', 'home': '/'}
 
 
 class Held(Exception):
@@ -305,10 +305,14 @@ class Exporter:
         (self.stage / 'site-data.json').write_text(json.dumps(payload, ensure_ascii=False, default=str))
         if CONFIG.get('wellnessPublic'):
             folder = vault() / '_System/wellness'
-            days = [{**(read_json(f).get('public') or {}), 'date': f.stem} for f in sorted(folder.glob('*.json'))] if folder.exists() else []
+            stored = [{**(read_json(f).get('public') or {}), 'date': f.stem} for f in sorted(folder.glob('*.json'))] if folder.exists() else []
+            # night details (clock times, naps, sleeping heart rate) reach the site only through sleep.json, where times are rounded
+            days = [{k: v for k, v in d.items() if k not in coros_sync.SLEEP_EXTRA} for d in stored]
             days = [d for d in days if len(d) > 1]
             (self.stage / 'data').mkdir(exist_ok=True)
             (self.stage / 'data/wellness.json').write_text(json.dumps({'coverage': {'start': days[0]['date'] if days else None, 'end': days[-1]['date'] if days else None}, 'days': days}, separators=(',', ':')))
+            nights = sleep_of(stored, sleep_tags(self.all))
+            if nights: (self.stage / 'data/sleep.json').write_text(json.dumps({'nights': nights}, separators=(',', ':')))
         (self.stage / 'data').mkdir(exist_ok=True)
         workouts = hevy_sync.all_workouts()
         if workouts: (self.stage / 'data/strength.json').write_text(json.dumps(strength_of(workouts), separators=(',', ':')))
@@ -328,6 +332,70 @@ class Exporter:
         backup = LOCAL / 'previous-export'; shutil.rmtree(backup, ignore_errors=True)
         if (ROOT / 'content').exists(): shutil.move(str(ROOT / 'content'), backup)
         shutil.move(str(self.stage), ROOT / 'content')
+
+
+SLEEP_STEP = 15        # published clock times are rounded to the nearest quarter hour
+NAP_LATEST = 21 * 60   # a "nap" that starts this late in the evening is the first stretch of the next night
+
+
+def clock_min(text):
+    h, m = str(text).split(':'); return int(h) * 60 + int(m)
+
+
+def round_step(minutes):
+    return math.floor(minutes / SLEEP_STEP + 0.5) * SLEEP_STEP
+
+
+def clock_text(minutes):
+    minutes %= 1440; return f'{minutes // 60:02d}:{minutes % 60:02d}'
+
+
+def sleep_tags(all_notes):
+    """{wake date: [tag, ...]} from the `sleep_tags` property of daily notes. The notes stay private; only these strings are published."""
+    out = {}
+    for n in all_notes:
+        m = n['meta']
+        if m.get('type') != 'daily' or not n['path'].startswith('Daily/'): continue
+        day = str(m.get('date') or '')[:10]
+        raw = m.get('sleep_tags') or []
+        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', day): continue
+        tags = []
+        for t in [raw] if isinstance(raw, str) else raw if isinstance(raw, list) else []:
+            for part in str(t).split(','):
+                part = re.sub(r'\s+', ' ', part.strip().lstrip('#')).strip().lower()[:40]
+                if part and part not in tags: tags.append(part)
+        if tags:
+            merged = out.setdefault(day, [])
+            merged += [t for t in tags if t not in merged]
+    return out
+
+
+def sleep_of(days, tags):
+    """The public sleep nights (docs/Architecture.md §12). `days` are stored wellness public parts with a `date` (the wake day).
+    Bedtime, wake time and nap time are rounded to a quarter hour here, so exact times never leave the vault."""
+    nights = []
+    for d in sorted(days, key=lambda x: x['date']):
+        if not d.get('sleepS'): continue
+        wake_day = date.fromisoformat(d['date'])
+        o = {'date': d['date']}
+        if d.get('bedtime') and d.get('wake'):
+            wake = clock_min(d['wake'])
+            if d.get('bedDate'): bed = clock_min(d['bedtime']) + (date.fromisoformat(d['bedDate']) - wake_day).days * 1440
+            else: bed = clock_min(d['bedtime']) - (1440 if clock_min(d['bedtime']) > wake else 0)
+            o['bedtime'], o['wake'] = clock_text(round_step(bed)), clock_text(round_step(wake))
+        o['asleepS'] = d['sleepS']
+        if d.get('inBedS'): o['inBedS'] = d['inBedS']
+        if d.get('inBedS') and d['sleepS'] <= d['inBedS']: o['efficiency'] = round(d['sleepS'] / d['inBedS'] * 100)
+        for src, dst in (('deepS', 'deepS'), ('lightS', 'lightS'), ('remS', 'remS'), ('awakeS', 'awakeS'), ('awakeCount', 'awakeCount')):
+            if d.get(src) is not None: o[dst] = d[src]
+        if d.get('napS') and d.get('napAt') and clock_min(d['napAt']) < NAP_LATEST:
+            o['napS'] = d['napS']; o['napAt'] = clock_text(round_step(clock_min(d['napAt'])))
+        elif d.get('napS') and not d.get('napAt'): o['napS'] = d['napS']
+        for src, dst in (('sleepScore', 'score'), ('hrv', 'hrv'), ('hrvLow', 'hrvLow'), ('hrvHigh', 'hrvHigh'), ('sleepHrMin', 'sleepHrMin'), ('sleepHrAvg', 'sleepHrAvg'), ('restingHr', 'restingHr')):
+            if d.get(src) is not None: o[dst] = d[src]
+        if tags.get(d['date']): o['tags'] = tags[d['date']]
+        nights.append(o)
+    return nights
 
 
 def strength_of(workouts):
@@ -445,7 +513,7 @@ def export():
     return Exporter().run()
 
 
-SHELLS = [('stream', 'Stream'), ('writing', 'Writing'), ('photos', 'Photos'), ('tags', 'Tags'), ('library', 'Library'), ('archive', 'Archive'), ('stream/training', 'Training history')]
+SHELLS = [('stream', 'Stream'), ('writing', 'Writing'), ('photos', 'Photos'), ('tags', 'Tags'), ('library', 'Library'), ('archive', 'Archive'), ('stream/training', 'Training history'), ('stream/sleep', 'Sleep')]
 
 
 def finish():

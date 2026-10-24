@@ -1,5 +1,5 @@
-/* Public front end: renders /, /stream/, /writing/, /photos/, /tags/ (+ /tags/<tag>/), /stream/training/, /library/ (and /projects/), /archive/ from
-   /site-data.json, /data/training.json and (optionally) /data/wellness.json. Hand-written SVG, no libraries. */
+/* Public front end: renders /, /stream/, /writing/, /photos/, /tags/ (+ /tags/<tag>/), /stream/training/, /stream/sleep/, /library/ (and /projects/), /archive/ from
+   /site-data.json, /data/training.json and (optionally) /data/wellness.json and /data/sleep.json. Hand-written SVG, no libraries. */
 (() => {
   'use strict';
 
@@ -432,7 +432,7 @@
       <dl class="week"><div><dt>Time</dt><dd>${esc(fmtDur(cur.s))}<small>avg ${esc(fmtDur(avg.s))}</small></dd></div><div><dt>Distance</dt><dd>${fmtMi(cur.km)} mi<small>avg ${fmtMi(avg.km)}</small></dd></div><div><dt>Sessions</dt><dd>${cur.n}<small>avg ${nf(avg.n, 1)}</small></dd></div></dl>
       <div class="strip"><svg viewBox="0 0 ${7 * cw} ${h + 16}" role="img" aria-label="Daily training time, last 7 days: ${esc(label)}">${hatchDef(hid)}${bars}</svg><p class="cap"><span>${esc(fd(from, 'md'))} – ${esc(fd(end, 'md'))}</span><a href="/stream/training/">History →</a></p></div></section>`;
   };
-  const INTRO_NAV = [['Stream', '/stream/'], ['Writing', '/writing/'], ['Library', '/library/'], ['Photos', '/photos/'], ['Training', '/stream/training/'], ['About', '/about.html']];
+  const INTRO_NAV = [['Stream', '/stream/'], ['Writing', '/writing/'], ['Library', '/library/'], ['Photos', '/photos/'], ['Training', '/stream/training/'], ['Sleep', '/stream/sleep/'], ['About', '/about.html']];
   const INTRO_MORE = [['Archive', '/archive/'], ['Tags', '/tags/'], ['Colophon', '/colophon.html'], ['RSS', '/index.xml']];
   const introCard = data => {
     /* introHtml is produced by the publisher (p/a/em/strong only); the plain fallback is escaped here */
@@ -473,7 +473,7 @@
         well.days.forEach(w => { if (!have.has(w.date) && wellLine(w)) days.push([w.date, []]); });
         days.sort((a, b) => b[0].localeCompare(a[0]));
       }
-      $('#s-cta').innerHTML = filter === 'training' ? '<div class="train-cta"><a href="/stream/training/">Training history →</a></div>' : '';
+      $('#s-cta').innerHTML = filter === 'training' ? '<div class="train-cta"><a href="/stream/training/">Training history →</a><a href="/stream/sleep/">Sleep →</a></div>' : '';
       $('#s-list').innerHTML = days.length
         ? `${timelineHtml(days.slice(0, limit), { months: true, well: well && well.map, latest: true })}${days.length > limit ? '<p class="more-row"><button type="button" class="btn ghost" id="s-more">Show more</button></p>' : ''}`
         : emptyState('Nothing here yet.');
@@ -1631,6 +1631,530 @@
   };
 
   /* ================================================================
+     Sleep (/stream/sleep/): data/sleep.json plus training load from data/training.json.
+     No target anywhere: everything is compared with the person's own usual.
+  ================================================================ */
+  const NONE_SLEEP = 'No sleep data in this period.';
+  const PERIOD_WORD = { month: '30 days', quarter: '12 weeks', year: '52 weeks' };
+  const SL = { deep: '#5f4d86', light: COL.series, rem: '#cbbfe3', awake: 'rgba(194,179,210,.22)' };
+  const SL_NUM = ['asleepS', 'inBedS', 'efficiency', 'deepS', 'lightS', 'remS', 'awakeS', 'awakeCount', 'napS', 'score', 'hrv', 'hrvLow', 'hrvHigh', 'sleepHrMin', 'sleepHrAvg', 'restingHr', 'respiration'];
+  const clockMin = t => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '')); return m ? +m[1] * 60 + +m[2] : null; };
+  /* minutes since midnight of the wake date; the evening before is negative */
+  const normNight = n => {
+    const o = { date: String(n.date).slice(0, 10), tags: Array.isArray(n.tags) ? [...new Set(n.tags.map(t => String(t).toLowerCase().trim()).filter(Boolean))] : [] };
+    SL_NUM.forEach(k => { const v = n[k]; if (v != null && v !== '' && Number.isFinite(Number(v))) o[k] = Number(v); });
+    if (o.efficiency == null && o.inBedS && o.asleepS <= o.inBedS) o.efficiency = Math.round(o.asleepS / o.inBedS * 100);
+    const wake = clockMin(n.wake), bed = clockMin(n.bedtime), nap = clockMin(n.napAt);
+    if (wake != null && bed != null) { o.wakeT = wake; o.bedT = bed > wake ? bed - 1440 : bed; }
+    if (nap != null) o.napT = nap;
+    return o;
+  };
+  let sleepPromise;
+  const loadSleep = () => (sleepPromise ??= loadOptional('/data/sleep.json').then(j => {
+    const ns = (j && Array.isArray(j.nights) ? j.nights : []).filter(n => n && isDay(String(n.date || '').slice(0, 10)) && Number.isFinite(Number(n.asleepS))).map(normNight)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    return ns.length ? ns : null;
+  }));
+  const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+  const median = a => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const stdev = a => { const m = mean(a); return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, a.length - 1)); };
+  const pearson = pts => {
+    const mx = mean(pts.map(p => p.x)), my = mean(pts.map(p => p.y));
+    let sxy = 0, sxx = 0, syy = 0;
+    pts.forEach(p => { sxy += (p.x - mx) * (p.y - my); sxx += (p.x - mx) ** 2; syy += (p.y - my) ** 2; });
+    return sxx && syy ? sxy / Math.sqrt(sxx * syy) : 0;
+  };
+  const fmtClock = m => { const t = ((Math.round(m) % 1440) + 1440) % 1440, h = Math.floor(t / 60); return `${h % 12 || 12}:${pad(t % 60)} ${h < 12 ? 'am' : 'pm'}`; };
+  const axisClock = m => { const h = ((Math.round(m / 60) % 24) + 24) % 24; return `${h % 12 || 12} ${h < 12 ? 'am' : 'pm'}`; };
+  const signedDur = s => (Math.abs(s) < 30 ? '0 min' : `${s < 0 ? MINUS : '+'}${fmtDur(Math.abs(s))}`);
+  const plainText = html => { const t = document.createElement('div'); t.innerHTML = html; return t.textContent.replace(/\s+/g, ' ').trim(); };
+  const sleepColor = h => mixColor('#3b2d57', '#cbbfe3', Math.max(0, Math.min(1, (h - 4) / 5)));
+  const stageParts = n => [['deep', 'Deep', n.deepS], ['light', 'Light', n.lightS], ['rem', 'REM', n.remS], ['awake', 'Awake', n.awakeS]].filter(x => x[2] > 0);
+
+  /* ---- one night as a day card (hover, focus, tap) ---- */
+  const sleepRows = n => {
+    const r = [];
+    if (n.bedT != null) r.push(['Window', `${fmtClock(n.bedT)} – ${fmtClock(n.wakeT)}`]);
+    r.push(['Asleep', fmtDur(n.asleepS)]);
+    if (n.efficiency != null) r.push(['Efficiency', `${nf(n.efficiency, 0)}%`]);
+    stageParts(n).forEach(([, label, v]) => r.push([label, label === 'Awake' && n.awakeCount > 0 ? `${fmtDur(v)} · ${n.awakeCount}×` : fmtDur(v)]));
+    if (n.score != null) r.push(['Score', nf(n.score, 0)]);
+    if (n.hrv != null) r.push(['HRV', `${nf(n.hrv, 0)}${n.hrvLow != null && n.hrvHigh != null ? ` (normal ${nf(n.hrvLow, 0)}–${nf(n.hrvHigh, 0)})` : ''}`]);
+    if (n.sleepHrAvg != null || n.sleepHrMin != null) r.push(['Sleep HR', [n.sleepHrAvg != null ? `${nf(n.sleepHrAvg, 0)} avg` : '', n.sleepHrMin != null ? `${nf(n.sleepHrMin, 0)} low` : ''].filter(Boolean).join(' · ')]);
+    if (n.restingHr != null) r.push(['Resting HR', nf(n.restingHr, 0)]);
+    if (n.napS) r.push(['Nap', `${fmtDur(n.napS)}${n.napT != null ? ` at ${fmtClock(n.napT)}` : ''}`]);
+    if (n.tags.length) r.push(['Tags', n.tags.join(', ')]);
+    return r;
+  };
+  const sleepCardHtml = (date, n) => {
+    const head = `<b>${esc(fd(date, 'day'))}</b><span class="dc-y">${esc(date.slice(0, 4))}</span>`;
+    if (!n) return `${head}<p class="dc-n">No sleep data</p>`;
+    const st = stageParts(n), bar = st.length ? `<div class="stages" aria-hidden="true">${st.map(([k, , v]) => `<span class="seg-${k}" style="flex:${v} 1 0"></span>`).join('')}</div>` : '';
+    return `<div class="sl-card">${head}${bar}<dl class="dc-w">${sleepRows(n).map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl></div>`;
+  };
+
+  /* ---- keyboard: arrows walk the items of a chart (in date order) and show their card or tip ---- */
+  const kbTour = (el, sel, show) => {
+    if (!el) return;
+    let i = -1;
+    const mark = list => list.forEach((n, k) => n.classList.toggle('kbf', k === i));
+    el.addEventListener('keydown', e => {
+      const list = $$(sel, el);
+      if (!list.length || e.altKey || e.ctrlKey || e.metaKey) return;
+      let k = i;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') k = Math.min(list.length - 1, i + 1);
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') k = i < 0 ? list.length - 1 : Math.max(0, i - 1);
+      else if (e.key === 'Home') k = 0;
+      else if (e.key === 'End') k = list.length - 1;
+      else return;
+      e.preventDefault();
+      i = k; mark(list);
+      const item = list[k], cx = item.getBoundingClientRect();
+      /* a cell scrolled out of the scrolling chart is brought back into view first */
+      if (el.scrollWidth > el.clientWidth) {
+        const r = el.getBoundingClientRect();
+        if (cx.left < r.left + 40) el.scrollLeft -= r.left + 60 - cx.left; else if (cx.right > r.right - 40) el.scrollLeft += cx.right - r.right + 60;
+      }
+      show(item, item.getBoundingClientRect());
+    });
+    el.addEventListener('blur', () => { i = -1; mark($$(sel, el)); hideTip(); });
+  };
+
+  const renderSleep = async (data, entries) => {
+    setTitle('Sleep');
+    const [N, t] = await Promise.all([loadSleep(), loadTraining(data, entries)]);
+    const crumb = '<a class="crumb" href="/stream/">← stream</a>';
+    if (!N) { page(head('Sleep', null, data, crumb) + emptyState('No sleep data yet.'), true); return; }
+
+    const today = todayStr(), byDate = new Map(N.map(n => [n.date, n]));
+    const first = N[0].date, lastNight = N[N.length - 1].date;
+    const pq = new URLSearchParams(location.search).get('period');
+    const S = { period: PERIODS.some(p => p[0] === pq) ? pq : 'quarter', yKey: 'score' };
+    S.win = periodWin(S.period, today);
+    const inWin = d => d >= S.win.from && d <= S.win.last;
+    const winNights = () => N.filter(n => inWin(n.date));
+    const nDays = () => dayNum(S.win.last) - dayNum(S.win.from) + 1;
+    const idxOf = d => dayNum(d) - dayNum(S.win.from);
+    const hasSome = (ns, k) => ns.filter(n => n[k] != null);
+    const live = () => $('#sl-live');
+    const announce = text => { const l = live(); if (l) l.textContent = text; };
+
+    /* training load of each day (the evening before a night is the day before its wake date) */
+    const loadOn = new Map();
+    t.activities.forEach(a => { if (a.load != null) loadOn.set(a.date, (loadOn.get(a.date) || 0) + a.load); });
+    const cov = t.coverage;
+
+    const hasTags = N.some(n => n.tags.length);
+    const hasResp = N.some(n => n.respiration != null);
+    const SIGNALS = [['hrv', 'HRV', 'ms', true], ['sleepHrMin', 'Lowest sleeping HR', 'bpm', false], ['restingHr', 'Resting HR', 'bpm', false], ...(hasResp ? [['respiration', 'Respiration', 'br/min', false]] : [])]
+      .filter(([k]) => N.some(n => n[k] != null));
+
+    page(`${head('Sleep', null, data, crumb)}
+      <div class="t-period"><span class="seg" id="period-seg" role="group" aria-label="Period">${PERIODS.map(([k, l]) => `<button type="button" data-period="${k}" aria-pressed="${k === S.period}">${l}</button>`).join('')}</span></div>
+      <p class="cov">Synced data: ${esc(fd(first))} – ${esc(fd(lastNight))} · ${N.length} ${N.length === 1 ? 'night' : 'nights'}</p>
+      <p class="sr-only" id="sl-live" aria-live="polite"></p>
+      <section class="t-section" aria-labelledby="sl-h-sched"><header><h2 id="sl-h-sched">Schedule</h2><p class="cap" id="sl-sched-cap"></p></header>
+        <div class="scroll-x chart sl-scroll" id="sl-sched" tabindex="0" role="group" aria-label="Sleep schedule. One bar per night from bedtime to wake time. Arrow keys move between nights."></div>
+        <div class="legend" id="sl-sched-legend"></div></section>
+      <section class="t-section" aria-labelledby="sl-h-avg"><header><h2 id="sl-h-avg">Averages</h2><p class="cap" id="sl-avg-cap"></p></header><div id="sl-avg"></div></section>
+      <section class="t-section" aria-labelledby="sl-h-bal"><header><h2 id="sl-h-bal">Balance vs usual</h2><p class="cap" id="sl-bal-cap"></p></header>
+        <p class="bw-label" id="sl-bal-label"></p>
+        <div class="chart" id="sl-bal" tabindex="0" role="group" aria-label="Running balance against your usual sleep. Arrow keys move between nights."></div></section>
+      <section class="t-section" aria-labelledby="sl-h-stg"><header><h2 id="sl-h-stg">Stages</h2><p class="cap" id="sl-stg-cap"></p></header>
+        <div class="chart" id="sl-stg" tabindex="0" role="group" aria-label="Sleep stages per night. Arrow keys move between nights."></div>
+        <div class="legend" id="sl-stg-legend"></div><div class="scroll-x" id="sl-stg-table"></div></section>
+      <section class="t-section" aria-labelledby="sl-h-sig"><header><h2 id="sl-h-sig">Overnight signals</h2><p class="cap" id="sl-sig-cap"></p></header>
+        <div class="sl-signals" id="sl-sig">${SIGNALS.map(([k, label], i) => `<figure><figcaption>${esc(label)}<span id="sl-sig-v${i}"></span></figcaption><div class="chart" id="sl-sig${i}" tabindex="0" role="group" aria-label="${esc(label)} per night. Arrow keys move between nights."></div></figure>`).join('') || emptyState('No overnight signals yet.')}</div>
+        <div class="legend" id="sl-sig-legend"></div></section>
+      <section class="t-section" aria-labelledby="sl-h-wk"><header><h2 id="sl-h-wk">Weekday vs weekend</h2><p class="cap" id="sl-wk-cap"></p></header>
+        <p class="bw-label" id="sl-wk-label"></p><div class="chart" id="sl-wk"></div></section>
+      <section class="t-section" aria-labelledby="sl-h-tr"><header><h2 id="sl-h-tr">Sleep &amp; training</h2><p class="cap" id="sl-tr-cap"></p></header>
+        <div class="t-controls" role="group" aria-label="Scatter settings"><div><span class="label">Show</span><span class="seg" id="sl-y-seg"><button type="button" data-y="score" aria-pressed="true">Sleep score</button><button type="button" data-y="hrv" aria-pressed="false">Next-morning HRV</button></span></div></div>
+        <div class="chart" id="sl-tr" tabindex="0" role="group" aria-label="Training load the day before against the following night. Arrow keys move between nights in the selected period."></div>
+        <div class="legend" id="sl-tr-legend"></div><p class="sl-note" id="sl-tr-note"></p></section>
+      <section class="t-section" aria-labelledby="sl-h-rib"><header><h2 id="sl-h-rib">Sleep ribbon</h2><p class="cap" id="sl-rib-cap"></p></header>
+        <div class="scroll-x ribbon sl-rib" id="sl-rib" tabindex="0" role="group" aria-label="Sleep ribbon. Arrow keys move between nights."></div>
+        <div class="legend" id="sl-rib-legend"></div></section>
+      ${hasTags ? `<section class="t-section" aria-labelledby="sl-h-tag"><header><h2 id="sl-h-tag">Tags</h2><p class="cap" id="sl-tag-cap"></p></header><div class="scroll-x" id="sl-tag"></div></section>` : ''}`, true);
+
+    /* ---------- shared card + tips ---------- */
+    const showCard = (d, x, y, anchor) => showTip(sleepCardHtml(d, byDate.get(d)), x, y, anchor, true);
+    const bindCards = el => {
+      if (!el) return;
+      const h = e => { const c = e.target.closest && e.target.closest('[data-date]'); c && c.dataset.date ? showCard(c.dataset.date, e.clientX, e.clientY) : hideTip(); };
+      el.addEventListener('pointermove', h); el.addEventListener('pointerdown', h); el.addEventListener('pointerleave', hideTip);
+    };
+    const tourShow = (item, rect) => {
+      if (item.dataset.date && item.dataset.card !== undefined) { showCard(item.dataset.date, 0, 0, rect); const n = byDate.get(item.dataset.date); announce(n ? `${fd(item.dataset.date, 'day')}: ${sleepRows(n).map(([k, v]) => `${k} ${v}`).join(', ')}` : `${fd(item.dataset.date, 'day')}: no sleep data`); return; }
+      const tip = item.getAttribute('data-tip') || '';
+      showTip(tip, 0, 0, rect); announce(plainText(tip));
+    };
+
+    /* ---------- 1. Schedule ---------- */
+    const clockRange = ns => {
+      const ts = ns.filter(n => n.bedT != null);
+      let lo = -180, hi = 660;   // 9 pm to 11 am, widened in whole hours when a night falls outside
+      if (ts.length) { lo = Math.min(lo, Math.floor(Math.min(...ts.map(n => n.bedT)) / 60) * 60); hi = Math.max(hi, Math.ceil(Math.max(...ts.map(n => n.wakeT)) / 60) * 60); }
+      return { lo: Math.max(lo, -420), hi: Math.min(hi, 1020) };
+    };
+    const drawSched = w => {
+      const all = winNights(), ns = all.filter(n => n.bedT != null);
+      if (!ns.length) return emptyState(NONE_SLEEP);
+      const { lo, hi } = clockRange(ns), n = nDays();
+      const tagged = ns.some(x => x.tags.length), napped = all.some(x => x.napS);
+      const left = 44, right = w < 520 ? 8 : 56;
+      const W = Math.max(w, left + right + n * 2.4), plotW = W - left - right, slot = plotW / n;
+      const top = 6 + (tagged ? 12 : 0), plotH = 230, napH = napped ? 14 : 0, H = top + plotH + napH + 22;
+      const y = m => top + (m - lo) / (hi - lo) * plotH, x = d => left + (idxOf(d) + .5) * slot, bw = Math.max(1.2, Math.min(9, slot * .6));
+      const hid = uid('hsl');
+      let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`Sleep schedule, ${ns.length} nights, median bedtime ${fmtClock(median(ns.map(x => x.bedT)))}, median wake time ${fmtClock(median(ns.map(x => x.wakeT)))}`)}">${hatchDef(hid)}`;
+      for (let m = lo; m <= hi; m += 120) s += `<line class="grid" x1="${left}" x2="${W - right}" y1="${y(m)}" y2="${y(m)}"/><text class="y" x="${left - 6}" y="${y(m) + 4}">${axisClock(m)}</text>`;
+      const c0 = Math.max(0, Math.min(n, idxOf(first))), c1 = Math.max(0, Math.min(n, idxOf(lastNight) + 1));
+      if (c0 > 0) s += `<rect x="${left}" y="${top}" width="${c0 * slot}" height="${plotH}" fill="url(#${hid})"><title>Not synced</title></rect>`;
+      if (c1 < n) s += `<rect x="${left + c1 * slot}" y="${top}" width="${(n - c1) * slot}" height="${plotH}" fill="url(#${hid})"><title>Not synced</title></rect>`;
+      if (ns.length >= 3) {
+        const mb = median(ns.map(x => x.bedT)), mw = median(ns.map(x => x.wakeT));
+        const bx0 = left + c0 * slot, bx1 = left + c1 * slot;
+        s += `<rect x="${bx0}" y="${y(mb)}" width="${bx1 - bx0}" height="${y(mw) - y(mb)}" fill="rgba(194,179,210,.07)"/>`;
+        [mb, mw].forEach(m => { s += `<line x1="${bx0}" x2="${bx1}" y1="${y(m)}" y2="${y(m)}" stroke="${COL.muted}" stroke-opacity=".5" stroke-dasharray="3 3" shape-rendering="crispEdges"/>`; if (right > 8) s += `<text x="${W - right + 6}" y="${y(m) + 3.5}">${fmtClock(Math.round(m / 15) * 15)}</text>`; });
+      }
+      let bars = '', hits = '', marks = '';
+      ns.forEach(nt => {
+        const x0 = x(nt.date) - bw / 2, y0 = y(nt.bedT), h = Math.max(1.5, y(nt.wakeT) - y0);
+        bars += `<rect x="${x0.toFixed(2)}" y="${y0.toFixed(1)}" width="${bw.toFixed(2)}" height="${h.toFixed(1)}" fill="${SL.awake}"/>`;
+        const st = [['deepS', SL.deep], ['lightS', SL.light], ['remS', SL.rem]].filter(p => nt[p[0]] > 0), tot = st.reduce((a, p) => a + nt[p[0]], 0) + (nt.awakeS || 0);
+        if (st.length && tot) {
+          let yy = y0;
+          st.forEach(([k, c]) => { const sh = nt[k] / tot * h; bars += `<rect x="${x0.toFixed(2)}" y="${yy.toFixed(1)}" width="${bw.toFixed(2)}" height="${Math.max(.5, sh).toFixed(1)}" fill="${c}"/>`; yy += sh; });
+        } else bars += `<rect x="${x0.toFixed(2)}" y="${y0.toFixed(1)}" width="${bw.toFixed(2)}" height="${h.toFixed(1)}" fill="${SL.light}"/>`;
+        if (nt.date === lastNight) marks += `<circle cx="${x(nt.date).toFixed(1)}" cy="${(y0 - 5).toFixed(1)}" r="2.2" fill="${COL.accent}"/>`;
+        if (nt.tags.length) marks += `<circle cx="${x(nt.date).toFixed(1)}" cy="${top - 9}" r="1.8" fill="${COL.text}"/>`;
+        hits += `<rect class="hv" data-card data-date="${nt.date}" x="${(left + idxOf(nt.date) * slot).toFixed(2)}" y="${top}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent"/>`;
+      });
+      all.filter(x => x.napS).forEach(nt => { marks += `<rect x="${(x(nt.date) - bw / 2).toFixed(2)}" y="${top + plotH + 6}" width="${bw.toFixed(2)}" height="3" fill="${COL.series}"/>`; });
+      if (tagged) s += `<text x="${left - 6}" y="${top - 6}" class="y">tag</text>`;
+      if (napped) s += `<text x="${left - 6}" y="${top + plotH + 10}" class="y">nap</text>`;
+      s += winTicks(S.win.from, S.win.last, x, H - 6, 54, W - 24);
+      return `${s}${bars}${marks}${hits}</svg>`;
+    };
+
+    /* ---------- 2. Headline strip ---------- */
+    const statsOf = ns => ({
+      n: ns.length,
+      asleep: ns.length ? mean(ns.map(x => x.asleepS)) : null,
+      eff: hasSome(ns, 'efficiency').length ? mean(hasSome(ns, 'efficiency').map(x => x.efficiency)) : null,
+      reg: ns.filter(x => x.bedT != null).length >= 3 ? stdev(ns.filter(x => x.bedT != null).map(x => x.bedT)) : null,
+      hrv: hasSome(ns, 'hrv').length ? mean(hasSome(ns, 'hrv').map(x => x.hrv)) : null,
+      hr: hasSome(ns, 'sleepHrMin').length ? mean(hasSome(ns, 'sleepHrMin').map(x => x.sleepHrMin)) : null,
+    });
+    const prevNights = () => { const len = nDays(); return N.filter(n => n.date >= addDays(S.win.from, -len) && n.date < S.win.from); };
+    const HEADS = [
+      ['asleep', 'Avg asleep', v => fmtDur(v), (d) => fmtDur(Math.abs(d)), 60],
+      ['eff', 'Avg efficiency', v => `${nf(v, 0)}%`, d => `${nf(Math.abs(d), 1)} pts`, .05],
+      ['reg', 'Bedtime regularity', v => `± ${nf(v, 0)} min`, d => `${nf(Math.abs(d), 0)} min`, 1],
+      ['hrv', 'Avg HRV', v => `${nf(v, 0)} ms`, d => `${nf(Math.abs(d), 0)}`, .5],
+      ['hr', 'Avg lowest sleeping HR', v => `${nf(v, 0)} bpm`, d => `${nf(Math.abs(d), 0)}`, .5],
+    ];
+    const drawAvg = () => {
+      const cur = statsOf(winNights()), prev = statsOf(prevNights());
+      const lbl = PERIOD_WORD[S.period];
+      $('#sl-avg-cap').textContent = `${PERIOD_LABEL[S.period]} · Δ vs the previous ${lbl}`;
+      if (!cur.n) { $('#sl-avg').innerHTML = emptyState(NONE_SLEEP); return; }
+      $('#sl-avg').innerHTML = `<dl class="sl-heads">${HEADS.map(([k, label, f, fd2, eps]) => {
+        if (cur[k] == null) return `<div><dt>${label}</dt><dd>—</dd></div>`;
+        let delta = '<small>no prior period</small>', aria = '';
+        if (prev[k] != null && prev.n >= 3 && cur.n >= 3) {
+          const d = cur[k] - prev[k];
+          const word = Math.abs(d) < eps ? 'unchanged' : d > 0 ? 'up' : 'down';
+          delta = `<small aria-hidden="true">${Math.abs(d) < eps ? '→ same' : `${d > 0 ? '↑' : '↓'} ${fd2(d)}`}</small>`;
+          aria = `<span class="sr-only">, ${word}${word === 'unchanged' ? '' : ` ${fd2(d)}`} versus the previous ${lbl}</span>`;
+        }
+        return `<div><dt>${label}</dt><dd>${esc(f(cur[k]))}${aria}${delta}</dd></div>`;
+      }).join('')}</dl>`;
+    };
+
+    /* ---------- 3. Balance vs usual (running sum of asleep minus the median of the previous 28 nights) ---------- */
+    const balanceSeries = () => {
+      const out = []; let run = 0;
+      N.forEach((nt, i) => {
+        const prior = N.slice(Math.max(0, i - 28), i).map(x => x.asleepS);
+        if (prior.length < 5 || !inWin(nt.date)) return;
+        const usual = median(prior); run += nt.asleepS - usual;
+        out.push({ date: nt.date, asleepS: nt.asleepS, usual, bal: run });
+      });
+      return out;
+    };
+    const drawBal = w => {
+      const pts = balanceSeries();
+      if (!pts.length) return emptyState(NONE_SLEEP);
+      const left = 44, right = 12, top = 10, plotH = 140, bottom = 22, H = top + plotH + bottom, plotW = w - left - right, n = nDays(), slot = plotW / n;
+      const vs = pts.map(p => p.bal / 3600).concat(0), lo0 = Math.min(...vs), hi0 = Math.max(...vs), pad2 = Math.max(.5, (hi0 - lo0) * .12);
+      const lo = lo0 - pad2, hi = hi0 + pad2;
+      const y = v => top + plotH - (v - lo) / (hi - lo) * plotH, x = d => left + (idxOf(d) + .5) * slot;
+      const last = pts[pts.length - 1];
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`Running balance against your usual sleep, ${signedDur(last.bal)} over ${pts.length} nights`)}">`;
+      [lo0, hi0].forEach(v => { if (Math.abs(v) > .01) s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(v)}" y2="${y(v)}"/><text class="y" x="${left - 6}" y="${y(v) + 4}">${v < 0 ? MINUS : '+'}${nf(Math.abs(v), Math.abs(v) < 10 ? 1 : 0)}h</text>`; });
+      s += `<line x1="${left}" x2="${w - right}" y1="${y(0)}" y2="${y(0)}" stroke="${COL.faint}" stroke-width="1" shape-rendering="crispEdges"/><text class="y" x="${left - 6}" y="${y(0) + 4}">0</text>`;
+      s += winTicks(S.win.from, S.win.last, x, H - 6, 54, w - 24);
+      let path = '', prev = null;
+      pts.forEach(p => { path += `${prev && dayNum(p.date) - dayNum(prev) <= 3 ? 'L' : 'M'}${x(p.date).toFixed(1)},${y(p.bal / 3600).toFixed(1)}`; prev = p.date; });
+      s += `<path d="${path}" fill="none" stroke="${COL.text}" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round"/>`;
+      s += `<circle cx="${x(last.date).toFixed(1)}" cy="${y(last.bal / 3600).toFixed(1)}" r="3" fill="${COL.accent}"/>`;
+      pts.forEach(p => {
+        const tip = `<b>${esc(fd(p.date, 'day'))}</b><br>Asleep ${esc(fmtDur(p.asleepS))} · usual ${esc(fmtDur(p.usual))}<br>Balance ${esc(signedDur(p.bal))}`;
+        s += `<rect class="hv" x="${(x(p.date) - Math.max(2, slot / 2)).toFixed(1)}" y="${top}" width="${Math.max(4, slot).toFixed(1)}" height="${plotH}" fill="transparent" data-tip="${esc(tip)}"/>`;
+      });
+      return `${s}</svg>`;
+    };
+
+    /* ---------- 4. Stages ---------- */
+    const stageNights = () => winNights().filter(n => n.deepS != null && n.lightS != null && n.remS != null);
+    const drawStages = w => {
+      const ns = stageNights();
+      if (!ns.length) return emptyState(NONE_SLEEP);
+      const left = 44, right = 8, top = 8, plotH = 170, bottom = 22, H = top + plotH + bottom, plotW = w - left - right, slot = plotW / nDays();
+      const total = n => (n.deepS + n.lightS + n.remS + (n.awakeS || 0)) / 3600;
+      const max = niceCeil(Math.max(...ns.map(total)));
+      const y = h => top + plotH - h / max * plotH, x = d => left + idxOf(d) * slot;
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`Sleep stages per night, ${ns.length} nights`)}">`;
+      [0, .5, 1].forEach(f => { s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(max * f)}" y2="${y(max * f)}"/><text class="y" x="${left - 6}" y="${y(max * f) + 4}">${nf(max * f, max * f % 1 ? 1 : 0)}h</text>`; });
+      s += winTicks(S.win.from, S.win.last, d => x(d) + slot / 2, H - 6, 54, w - 24);
+      const gap = slot > 6 ? 2 : slot > 3 ? 1 : .5;
+      ns.forEach(nt => {
+        let base = 0;
+        [['deepS', SL.deep], ['lightS', SL.light], ['remS', SL.rem], ['awakeS', SL.awake]].forEach(([k, c]) => {
+          const v = (nt[k] || 0) / 3600; if (!v) return;
+          s += `<rect x="${(x(nt.date) + gap / 2).toFixed(2)}" y="${y(base + v).toFixed(1)}" width="${Math.max(1, slot - gap).toFixed(2)}" height="${Math.max(.5, y(base) - y(base + v)).toFixed(1)}" fill="${c}"/>`;
+          base += v;
+        });
+        const tip = `<b>${esc(fd(nt.date, 'day'))}</b><br>Deep ${esc(fmtDur(nt.deepS))}<br>Light ${esc(fmtDur(nt.lightS))}<br>REM ${esc(fmtDur(nt.remS))}${nt.awakeS ? `<br>Awake ${esc(fmtDur(nt.awakeS))}` : ''}`;
+        s += `<rect class="hv" x="${x(nt.date).toFixed(2)}" y="${top}" width="${slot.toFixed(2)}" height="${plotH}" fill="transparent" data-tip="${esc(tip)}"/>`;
+      });
+      return `${s}</svg>`;
+    };
+    const drawStageTable = () => {
+      const ns = stageNights();
+      if (!ns.length) { $('#sl-stg-table').innerHTML = ''; return; }
+      const rows = [['deep', 'Deep', 'deepS'], ['light', 'Light', 'lightS'], ['rem', 'REM', 'remS'], ['awake', 'Awake', 'awakeS']].map(([k, label, f]) => ({ k, label, avg: mean(ns.map(n => n[f] || 0)) / 60 }));
+      const tot = rows.reduce((a, r) => a + r.avg, 0);
+      $('#sl-stg-table').innerHTML = `<table class="data"><caption class="sr-only">Average minutes in each stage and share of time in bed, ${esc(PERIOD_LABEL[S.period].toLowerCase())}</caption><thead><tr><th scope="col">Stage</th><th scope="col">Avg minutes</th><th scope="col">Of time in bed</th></tr></thead><tbody>${rows.map(r => `<tr><td class="l"><i class="sw-dot" style="background:${SL[r.k]}"></i>${r.label}</td><td>${nf(r.avg, 0)}</td><td>${nf(r.avg / tot * 100, 0)}%</td></tr>`).join('')}</tbody></table>`;
+    };
+
+    /* ---------- 5. Overnight signals ---------- */
+    const drawSignal = (key, showAxis, band) => w => {
+      const ns = hasSome(winNights(), key);
+      if (ns.length < 1) return `<p class="empty-state" style="padding:.75rem 0">${NONE_SLEEP}</p>`;
+      const left = 44, right = 12, top = 8, plotH = 64, bottom = showAxis ? 22 : 4, H = top + plotH + bottom, plotW = w - left - right, slot = plotW / nDays();
+      const bandN = band ? ns.filter(n => n.hrvLow != null && n.hrvHigh != null) : [];
+      const vs = ns.map(n => n[key]).concat(bandN.flatMap(n => [n.hrvLow, n.hrvHigh]));
+      const rng = Math.max(...vs) - Math.min(...vs), step = rng <= 8 ? 2 : rng <= 20 ? 5 : rng <= 60 ? 10 : 20;
+      const lo = Math.floor(Math.min(...vs) / step) * step, hi = Math.max(lo + step, Math.ceil(Math.max(...vs) / step) * step);
+      const y = v => top + plotH - (v - lo) / (hi - lo) * plotH, x = d => left + (idxOf(d) + .5) * slot;
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`${key}: ${ns.length} nights, ${ns[0][key]} to ${ns[ns.length - 1][key]}`)}">`;
+      [lo, hi].forEach(v => { s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(v)}" y2="${y(v)}"/><text class="y" x="${left - 6}" y="${y(v) + 4}">${nf(v, 0)}</text>`; });
+      if (showAxis) s += winTicks(S.win.from, S.win.last, x, H - 6, 54, w - 24);
+      if (bandN.length > 1) {
+        let seg = [];
+        const flush = () => { if (seg.length > 1) s += `<path d="${seg.map((d, i) => `${i ? 'L' : 'M'}${x(d.date).toFixed(1)},${y(d.hrvHigh).toFixed(1)}`).join('')}${seg.slice().reverse().map(d => `L${x(d.date).toFixed(1)},${y(d.hrvLow).toFixed(1)}`).join('')}Z" fill="rgba(194,179,210,.08)" stroke="none"/>`; seg = []; };
+        bandN.forEach(d => { if (seg.length && dayNum(d.date) - dayNum(seg[seg.length - 1].date) > 3) flush(); seg.push(d); });
+        flush();
+      }
+      let path = '', prev = null;
+      ns.forEach(n => { path += `${prev && dayNum(n.date) - dayNum(prev) <= 3 ? 'L' : 'M'}${x(n.date).toFixed(1)},${y(n[key]).toFixed(1)}`; prev = n.date; });
+      s += `<path d="${path}" fill="none" stroke="${band ? COL.text : COL.series}" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"${band ? '' : ' stroke-dasharray="5 3"'}/>`;
+      if (ns.length <= 120) ns.forEach(n => { s += `<circle cx="${x(n.date).toFixed(1)}" cy="${y(n[key]).toFixed(1)}" r="1.3" fill="${band ? COL.text : COL.series}"/>`; });
+      const last = ns[ns.length - 1];
+      s += `<circle cx="${x(last.date).toFixed(1)}" cy="${y(last[key]).toFixed(1)}" r="3" fill="${COL.accent}"/>`;
+      ns.forEach(n => {
+        const tip = `<b>${esc(fd(n.date, 'day'))}</b><br>${esc(SIGNALS.find(g => g[0] === key)[1])} ${nf(n[key], 0)}${key === 'hrv' && n.hrvLow != null && n.hrvHigh != null ? `<br>Normal ${nf(n.hrvLow, 0)}–${nf(n.hrvHigh, 0)}` : ''}`;
+        s += `<rect class="hv" x="${(x(n.date) - Math.max(2, slot / 2)).toFixed(1)}" y="${top}" width="${Math.max(4, slot).toFixed(1)}" height="${plotH}" fill="transparent" data-tip="${esc(tip)}"/>`;
+      });
+      return `${s}</svg>`;
+    };
+
+    /* ---------- 6. Weekday vs weekend (a night is dated by the evening it began: Fri and Sat evenings are weekend nights) ---------- */
+    const isWeekend = date => { const dow = new Date((dayNum(date) - 1) * 864e5).getUTCDay(); return dow === 5 || dow === 6; };
+    const groupStats = ns => ({ n: ns.length, bed: mean(ns.map(x => x.bedT)), wake: mean(ns.map(x => x.wakeT)), mid: mean(ns.map(x => (x.bedT + x.wakeT) / 2)), dur: mean(ns.map(x => x.asleepS)) });
+    const wkGroups = () => {
+      const ns = winNights().filter(n => n.bedT != null);
+      return { wd: ns.filter(n => !isWeekend(n.date)), we: ns.filter(n => isWeekend(n.date)) };
+    };
+    const drawWk = w => {
+      const { wd, we } = wkGroups();
+      if (wd.length < 3 || we.length < 3) return `<p class="empty-state" style="padding:1rem 0">${wd.length + we.length ? `Not enough nights yet: ${wd.length} weeknights, ${we.length} Fri–Sat nights (3 of each needed).` : NONE_SLEEP}</p>`;
+      const a = groupStats(wd), b = groupStats(we), { lo, hi } = clockRange([...wd, ...we]);
+      const labW = w < 520 ? 0 : 118, left = 8 + labW, right = 12, rowH = labW ? 40 : 58, top = 6, H = top + 2 * rowH + 24, plotW = w - left - right;
+      const x = m => left + (m - lo) / (hi - lo) * plotW;
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`Average sleep window: weeknights ${fmtClock(a.bed)} to ${fmtClock(a.wake)}, Friday and Saturday nights ${fmtClock(b.bed)} to ${fmtClock(b.wake)}`)}">`;
+      for (let m = lo; m <= hi; m += 120) s += `<line class="grid" x1="${x(m)}" x2="${x(m)}" y1="${top}" y2="${top + 2 * rowH}"/><text x="${x(m)}" y="${H - 6}" text-anchor="middle">${axisClock(m)}</text>`;
+      [[a, 'Weeknights', 0], [b, 'Fri–Sat nights', 1]].forEach(([g, label, i]) => {
+        const yy = top + i * rowH + (labW ? 10 : 24);
+        s += `<rect x="${x(g.bed).toFixed(1)}" y="${yy}" width="${Math.max(2, x(g.wake) - x(g.bed)).toFixed(1)}" height="12" rx="1" fill="${i ? COL.text : COL.series}" fill-opacity="${i ? .75 : 1}"/>`;
+        s += `<line x1="${x(g.mid).toFixed(1)}" x2="${x(g.mid).toFixed(1)}" y1="${yy - 4}" y2="${yy + 16}" stroke="${COL.accent}" stroke-width="1.5"/>`;
+        const cap = `${fmtClock(g.bed)} – ${fmtClock(g.wake)} · ${fmtDur(g.dur)}${labW ? ' asleep' : ''} · ${g.n} nights`;
+        s += `<text x="${labW ? 0 : left}" y="${labW ? yy + 9 : yy - 12}" style="fill:${COL.text};font-family:var(--font);font-size:13px">${label}</text>`;
+        s += `<text x="${left}" y="${yy + 28}">${esc(cap)}</text>`;
+      });
+      return `${s}</svg>`;
+    };
+
+    /* ---------- 7. Sleep and training ---------- */
+    const scatterPoints = () => N.map(n => {
+      const d = addDays(n.date, -1);
+      if (!(cov.start && d >= cov.start && d <= cov.end)) return null;
+      const yv = S.yKey === 'hrv' ? n.hrv : n.score;
+      return yv == null ? null : { date: n.date, x: loadOn.get(d) || 0, y: yv, inWin: inWin(n.date) };
+    }).filter(Boolean);
+    const drawTrain = w => {
+      const pts = scatterPoints();
+      if (pts.length < 2) return emptyState('Not enough nights with training data yet.');
+      const left = 44, right = 12, top = 22, plotH = 220, bottom = 34, H = top + plotH + bottom, plotW = w - left - right;
+      const xmax = niceCeil(Math.max(...pts.map(p => p.x), 1)), ys = pts.map(p => p.y);
+      const lo = Math.floor(Math.min(...ys) / 10) * 10, hi = Math.max(lo + 20, Math.ceil(Math.max(...ys) / 10) * 10);
+      const x = v => left + v / xmax * plotW, y = v => top + plotH - (v - lo) / (hi - lo) * plotH;
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`${pts.length} nights: training load the day before against ${S.yKey === 'hrv' ? 'next-morning HRV' : 'sleep score'}`)}">`;
+      s += `<text x="${left}" y="10" style="fill:${COL.muted}">${S.yKey === 'hrv' ? 'Next-morning HRV (ms)' : 'Sleep score'}</text>`;
+      [lo, (lo + hi) / 2, hi].forEach(v => { s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(v)}" y2="${y(v)}"/><text class="y" x="${left - 6}" y="${y(v) + 4}">${nf(v, 0)}</text>`; });
+      [0, .5, 1].forEach(f => { s += `<text x="${x(xmax * f)}" y="${top + plotH + 14}" text-anchor="${f === 0 ? 'start' : f === 1 ? 'end' : 'middle'}">${nf(xmax * f, 0)}</text>`; });
+      s += `<text x="${left + plotW / 2}" y="${H - 4}" text-anchor="middle" style="fill:${COL.muted}">Training load, day before</text>`;
+      const tipOf = p => `<b>${esc(fd(p.date, 'day'))}</b><br>Load the day before ${nf(p.x, 0)}<br>${S.yKey === 'hrv' ? 'HRV' : 'Sleep score'} ${nf(p.y, 0)}`;
+      pts.filter(p => !p.inWin).forEach(p => { s += `<circle cx="${x(p.x).toFixed(1)}" cy="${y(p.y).toFixed(1)}" r="2.5" fill="${COL.dim}"/>`; });
+      pts.filter(p => p.inWin).forEach(p => { s += `<circle class="pt" cx="${x(p.x).toFixed(1)}" cy="${y(p.y).toFixed(1)}" r="3.2" fill="${COL.text}" fill-opacity=".9" data-tip="${esc(tipOf(p))}"/>`; });
+      pts.filter(p => !p.inWin).forEach(p => { s += `<circle cx="${x(p.x).toFixed(1)}" cy="${y(p.y).toFixed(1)}" r="7" fill="transparent" data-tip="${esc(tipOf(p))}"/>`; });
+      return `${s}</svg>`;
+    };
+    const drawTrainNote = () => {
+      const pts = scatterPoints(), what = S.yKey === 'hrv' ? 'HRV' : 'sleep scores';
+      $('#sl-tr-note').textContent = pts.length < 10 ? '' : (() => {
+        const r = pearson(pts);
+        return r > .2 ? `Across ${pts.length} nights, higher-load days tend to be followed by higher ${what}.` : r < -.2 ? `Across ${pts.length} nights, higher-load days tend to be followed by lower ${what}.` : `Across ${pts.length} nights, no clear pattern between the day's load and ${what}.`;
+      })();
+      $('#sl-tr-legend').innerHTML = pts.length >= 2 ? `<span><i class="sw dot-hi"></i>${esc(PERIOD_LABEL[S.period])}</span><span><i class="sw dot-lo"></i>Earlier nights</span>` : '';
+    };
+
+    /* ---------- 8. Sleep ribbon ---------- */
+    const drawRib = w => {
+      const hid = uid('hsr');
+      const cell = (d, x, yy, cw, ch, gap) => {
+        const nt = byDate.get(d);
+        if (!nt && (d < first || d > lastNight)) return null;
+        return `<rect class="day" x="${x}" y="${yy}" width="${Math.max(1, cw - gap)}" height="${ch}" rx="1" fill="${nt ? sleepColor(nt.asleepS / 3600) : COL.empty}" data-card data-date="${d}"${nt ? ' data-has="1"' : ''}/>`;
+      };
+      if (S.period !== 'year') {
+        const from = S.win.from, n = nDays();
+        if (!winNights().length) return emptyState(NONE_SLEEP);
+        const top = 18, cellH = 30, W = Math.max(w, n * 9), cw = W / n, gap = cw > 12 ? 2 : 1, H = top + cellH;
+        let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">${hatchDef(hid)}${winTicks(from, S.win.last, d => idxOf(d) * cw, 10, 54, W - 24)}`;
+        for (let i = 0; i < n; i++) {
+          const d = addDays(from, i), c = cell(d, i * cw, top, cw, cellH, gap);
+          s += c || `<rect x="${i * cw}" y="${top}" width="${Math.max(1, cw - gap)}" height="${cellH}" fill="url(#${hid})"/>`;
+        }
+        return `${s}</svg>`;
+      }
+      const labelW = 38, top = 16, cellH = 11, gapY = 5, W = Math.max(w, 760), cw = (W - labelW - 2) / 366;
+      const y0 = +first.slice(0, 4), y1 = +today.slice(0, 4), yrs = []; for (let y = y1; y >= y0; y--) yrs.push(y);
+      const H = top + yrs.length * (cellH + gapY);
+      let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">${hatchDef(hid)}`;
+      MONTH_STARTS.forEach((m, i) => { s += `<text x="${labelW + m * cw}" y="10">${esc(fd(`2025-${pad(i + 1)}-01`, 'mon'))}</text>`; });
+      yrs.forEach((y, ri) => {
+        const yy = top + ri * (cellH + gapY), jan1 = dayNum(`${y}-01-01`);
+        s += `<text x="${labelW - 8}" y="${yy + cellH - 1}" text-anchor="end">${y}</text>`;
+        for (let i = 0; i < daysInYear(y); i++) {
+          const d = fromNum(jan1 + i); if (d > today) break;
+          s += cell(d, labelW + i * cw, yy, cw, cellH, .8) || `<rect x="${labelW + i * cw}" y="${yy}" width="${Math.max(1, cw - .8)}" height="${cellH}" fill="url(#${hid})"/>`;
+        }
+      });
+      return `${s}</svg>`;
+    };
+
+    /* ---------- 9. Tags ---------- */
+    const drawTags = () => {
+      const box = $('#sl-tag'); if (!box) return;
+      const ns = winNights(), tags = [...new Set(ns.flatMap(n => n.tags))];
+      $('#sl-tag-cap').textContent = PERIOD_LABEL[S.period];
+      if (!tags.length) { box.innerHTML = emptyState('No tags in this period.'); return; }
+      const avgScore = a => { const v = hasSome(a, 'score').map(x => x.score); return v.length ? mean(v) : null; };
+      const rows = tags.map(tag => {
+        const w = ns.filter(n => n.tags.includes(tag)), o = ns.filter(n => !n.tags.includes(tag)), sw = avgScore(w), so = avgScore(o);
+        return { tag, n: w.length, asleep: mean(w.map(x => x.asleepS)), score: sw, delta: sw != null && so != null && w.length >= 3 && o.length >= 3 ? sw - so : null };
+      }).sort((a, b) => b.n - a.n || a.tag.localeCompare(b.tag));
+      box.innerHTML = `<table class="data"><caption class="sr-only">Nights by tag with average time asleep and average sleep score compared with nights without the tag</caption><thead><tr><th scope="col">Tag</th><th scope="col">Nights</th><th scope="col">Avg asleep</th><th scope="col">Avg score</th><th scope="col">vs untagged</th></tr></thead><tbody>${rows.map(r => `<tr><td class="l">${esc(r.tag)}</td><td>${r.n}</td><td>${esc(fmtDur(r.asleep))}</td><td>${r.score != null ? nf(r.score, 0) : '—'}</td><td>${r.delta != null ? esc(signed(r.delta, 0)) : '—'}</td></tr>`).join('')}</tbody></table>`;
+    };
+
+    /* ---------- wiring ---------- */
+    const swatch = (c, label) => `<span><i class="sw" style="background:${c}"></i>${label}</span>`;
+    const run = {
+      sched: mount($('#sl-sched'), drawSched), bal: mount($('#sl-bal'), drawBal), stg: mount($('#sl-stg'), drawStages), wk: mount($('#sl-wk'), drawWk),
+      tr: mount($('#sl-tr'), drawTrain), rib: mount($('#sl-rib'), drawRib),
+      sig: SIGNALS.map(([k, , , band], i) => mount($(`#sl-sig${i}`), drawSignal(k, i === SIGNALS.length - 1, band))),
+    };
+    [$('#sl-bal'), $('#sl-stg'), $('#sl-wk'), $('#sl-tr'), ...SIGNALS.map((_, i) => $(`#sl-sig${i}`))].forEach(bindTip);
+    [$('#sl-sched'), $('#sl-rib')].forEach(bindCards);
+    kbTour($('#sl-sched'), 'rect.hv[data-date]', tourShow);
+    kbTour($('#sl-rib'), 'rect.day[data-has]', tourShow);
+    kbTour($('#sl-bal'), 'rect.hv[data-tip]', tourShow);
+    kbTour($('#sl-stg'), 'rect.hv[data-tip]', tourShow);
+    kbTour($('#sl-tr'), 'circle.pt', tourShow);
+    SIGNALS.forEach((_, i) => kbTour($(`#sl-sig${i}`), 'rect.hv[data-tip]', tourShow));
+
+    const refresh = () => {
+      hideTip();
+      const ns = winNights(), lbl = PERIOD_LABEL[S.period], word = PERIOD_WORD[S.period];
+      const cap = `${lbl} · ${ns.length} ${ns.length === 1 ? 'night' : 'nights'}`;
+      $('#sl-sched-cap').textContent = ns.length ? cap : lbl;
+      $('#sl-sched-legend').innerHTML = ns.some(n => n.bedT != null)
+        ? `${swatch(SL.deep, 'Deep')}${swatch(SL.light, 'Light')}${swatch(SL.rem, 'REM')}${swatch(SL.awake, 'Awake')}<span><i class="sw band"></i>Median bed to wake</span>${ns.some(n => n.tags.length) ? '<span><i class="sw dot-t"></i>Tagged night</span>' : ''}${ns.some(n => n.napS) ? '<span><i class="sw nap"></i>Nap</span>' : ''}<span><i class="sw dot"></i>Last night</span><span><i class="sw hatch"></i>Not synced</span>` : '';
+      drawAvg();
+      const bal = balanceSeries();
+      $('#sl-bal-label').innerHTML = bal.length ? `<b>${esc(signedDur(bal[bal.length - 1].bal))}</b> vs usual over ${esc(word)}` : '';
+      $('#sl-bal-label').hidden = !bal.length;
+      $('#sl-bal-cap').textContent = bal.length ? `${lbl} · usual = median of the previous 28 nights` : lbl;
+      const stg = stageNights();
+      $('#sl-stg-cap').textContent = stg.length ? `${lbl} · hours per night` : lbl;
+      $('#sl-stg-legend').innerHTML = stg.length ? `${swatch(SL.deep, 'Deep')}${swatch(SL.light, 'Light')}${swatch(SL.rem, 'REM')}${swatch(SL.awake, 'Awake')}` : '';
+      drawStageTable();
+      $('#sl-sig-cap').textContent = lbl;
+      $('#sl-sig-legend').innerHTML = SIGNALS.some(g => g[3]) && ns.some(n => n.hrv != null) ? '<span><i class="sw line"></i>HRV</span><span><i class="sw band"></i>Normal range</span><span><i class="sw dot"></i>Latest</span>' : '';
+      SIGNALS.forEach(([k, , unit], i) => { const v = hasSome(ns, k); $(`#sl-sig-v${i}`).textContent = v.length ? `${nf(v[v.length - 1][k], 0)} ${unit} · avg ${nf(mean(v.map(x => x[k])), 0)}` : ''; });
+      const { wd, we } = wkGroups();
+      if (wd.length >= 3 && we.length >= 3) {
+        const gap = Math.abs(groupStats(we).mid - groupStats(wd).mid);
+        $('#sl-wk-label').innerHTML = `Social jetlag <b>${nf(Math.round(gap), 0)} min</b> · weekend midpoint ${groupStats(we).mid >= groupStats(wd).mid ? 'later' : 'earlier'}`;
+      } else $('#sl-wk-label').innerHTML = '';
+      $('#sl-wk-label').hidden = !$('#sl-wk-label').innerHTML;
+      $('#sl-wk-cap').textContent = `${lbl} · midpoint of the bed-to-wake window`;
+      $('#sl-tr-cap').textContent = 'Day before vs the night after';
+      drawTrainNote();
+      $('#sl-rib-cap').textContent = `One cell per night, coloured by time asleep`;
+      $('#sl-rib-legend').innerHTML = ns.length ? '<span><i class="sw scale-sl"></i>Less → more sleep</span><span><i class="sw hatch"></i>Not synced</span>' : '';
+      drawTags();
+      Object.values(run).flat().forEach(f => f());
+    };
+    const syncUrl = () => {
+      const u = new URL(location.href);
+      if (S.period === 'quarter') u.searchParams.delete('period'); else u.searchParams.set('period', S.period);
+      history.replaceState(null, '', u.pathname + u.search);
+    };
+    $('#period-seg').addEventListener('click', e => {
+      const b = e.target.closest('[data-period]');
+      if (!b || b.dataset.period === S.period) return;
+      S.period = b.dataset.period; S.win = periodWin(S.period, today);
+      $$('#period-seg button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      syncUrl(); refresh();
+      const rib = $('#sl-rib'); rib.scrollLeft = S.period === 'year' ? Math.max(0, rib.scrollWidth - rib.clientWidth) : 0;
+    });
+    $('#sl-y-seg').addEventListener('click', e => {
+      const b = e.target.closest('[data-y]');
+      if (!b) return;
+      S.yKey = b.dataset.y;
+      $$('#sl-y-seg button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      drawTrainNote(); run.tr();
+    });
+    refresh();
+    const rib = $('#sl-rib'); rib.scrollLeft = S.period === 'year' ? Math.max(0, rib.scrollWidth - rib.clientWidth) : 0;
+  };
+
+  /* ================================================================
      Router
   ================================================================ */
   const setNav = () => {
@@ -1650,6 +2174,7 @@
       else if (path === '/stream') await renderStream(data, entries);
       else if (path === '/writing') renderWriting(data, entries);
       else if (path === '/stream/training') await renderTraining(data, entries);
+      else if (path === '/stream/sleep') await renderSleep(data, entries);
       else if (path === '/library') renderLibrary(data, entries);
       else if (path === '/projects') renderLibrary(data, entries);
       else if (path === '/photos') renderPhotos(data, entries);
