@@ -3,9 +3,8 @@ title: About
 type: page
 date: '2026-10-16'
 published: '2026-10-16T13:08:03-05:00'
-updated: '2026-10-17'
+updated: '2026-10-24'
 created: '2026-10-16T13:08:03-05:00'
-modified: '2026-10-17'
+modified: '2026-10-24'
 ---
 
-This is my website that I use to track and visualize my training and thought. 
