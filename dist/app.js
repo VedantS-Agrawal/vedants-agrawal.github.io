@@ -807,12 +807,12 @@
   const totalMetric = (g, o) => (['run', 'ride', 'swim', 'walk', 'hike'].includes(g) && o.km > 0 ? distStr(g, o.km) : fmtDur(o.s));
 
   /* Period switch: rolling windows ending today. Quarter and Year are whole Mon-Sun weeks ending with the current week. */
-  const PERIODS = [['month', 'Month'], ['quarter', 'Quarter'], ['year', 'Year']];
-  const PERIOD_LABEL = { month: 'Last 30 days', quarter: 'Last 12 weeks', year: 'Last 52 weeks' };
+  const PERIODS = [['month', 'Month'], ['quarter', '3 months'], ['year', 'Year']];
+  const PERIOD_LABEL = { month: 'Last 30 days', quarter: 'Last 3 months', year: 'Last 52 weeks' };
   const NONE = 'No training in this period.';
   const periodWin = (period, today) => {
     if (period === 'month') return { period, from: addDays(today, -29), to: today, last: today, n: 30, daily: true };
-    const n = period === 'year' ? 52 : 12, to = addDays(weekStart(today), 6);
+    const n = period === 'year' ? 52 : 13, to = addDays(weekStart(today), 6);   // 13 whole weeks ≈ the last 3 months
     return { period, from: addDays(weekStart(today), -(n - 1) * 7), to, last: to > today ? today : to, n, daily: false };
   };
   /* x-axis labels for a date range: Mondays for short ranges, month starts otherwise */
@@ -1635,7 +1635,7 @@
      No target anywhere: everything is compared with the person's own usual.
   ================================================================ */
   const NONE_SLEEP = 'No sleep data in this period.';
-  const PERIOD_WORD = { month: '30 days', quarter: '12 weeks', year: '52 weeks' };
+  const PERIOD_WORD = { month: '30 days', quarter: '3 months', year: '52 weeks' };
   const SL = { deep: '#5f4d86', light: COL.series, rem: '#cbbfe3', awake: 'rgba(194,179,210,.22)' };
   const SL_NUM = ['asleepS', 'inBedS', 'efficiency', 'deepS', 'lightS', 'remS', 'awakeS', 'awakeCount', 'napS', 'score', 'hrv', 'hrvLow', 'hrvHigh', 'sleepHrMin', 'sleepHrAvg', 'restingHr', 'respiration'];
   const clockMin = t => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '')); return m ? +m[1] * 60 + +m[2] : null; };

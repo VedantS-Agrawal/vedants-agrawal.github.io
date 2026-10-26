@@ -1,7 +1,7 @@
 ---
 title: Psychoanalysis and Zen Buddhism
 type: literature
-date: '2026-05-01'
+date: '2026-05-31'
 published: '2026-10-16'
 updated: '2026-10-16'
 created: '2026-10-16'

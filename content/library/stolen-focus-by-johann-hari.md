@@ -1,10 +1,10 @@
 ---
 title: Stolen Focus by Johann Hari
 type: literature
-date: '2026-10-01'
-published: '2026-10-26T16:35:17-05:00'
+date: '2026-10-26'
+published: '2026-10-26'
 updated: '2026-10-26'
-created: '2026-10-26T16:35:17-05:00'
+created: '2026-10-26'
 modified: '2026-10-26'
 ---
 

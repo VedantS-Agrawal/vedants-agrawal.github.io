@@ -1,7 +1,7 @@
 ---
 title: Behave
 type: literature
-date: '2025-12-01'
+date: '2025-12-31'
 published: '2026-10-16'
 updated: '2026-10-16'
 created: '2026-10-16'
