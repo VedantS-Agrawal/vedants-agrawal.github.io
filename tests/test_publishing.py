@@ -61,6 +61,15 @@ class PublicationTests(unittest.TestCase):
         e = self.entries()[0]
         self.assertEqual((e['date'], e['datePrecision']), ('2025-02-28', 'month'))
 
+    def test_literature_note_points_at_its_book(self):
+        self.note('Library/The Stranger.md', '', 'literature', visibility='public', creator='Albert Camus')
+        self.note('Notes/Literature Notes/On The Stranger.md', 'Disoriented.', 'literature-note', visibility='public', about='[[The Stranger]]')
+        publisher.export()
+        body = (self.root / 'content/notes/on-the-stranger.md').read_text()
+        self.assertIn('*On [The Stranger](/library/the-stranger)*', body)
+        links = json.loads((self.root / 'content/data/links.json').read_text())
+        self.assertEqual(links['backlinks']['/library/the-stranger'][0]['title'], 'On The Stranger')
+
     def test_started_date_orders_notes(self):
         self.note('Notes/Idea.md', 'x', 'concept', visibility='public', created='2023-02-01')
         publisher.export()

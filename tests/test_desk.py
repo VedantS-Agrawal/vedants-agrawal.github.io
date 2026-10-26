@@ -6,7 +6,7 @@ import common, publisher, desk
 
 TEMPLATES = {
     'Free writing': '---\ntitle: "{{title}}"\ntype: writing\nvisibility: private\ncreated: "{{date}}"\ntopics: []\n---\n',
-    'Literature': '---\ntitle: "{{title}}"\ntype: literature\nvisibility: private\ncreator: ""\nmedium: book\nsource_url: ""\nconsumption_status: saved\nfinished: ""\ncreated: "{{date}}"\ntopics: []\n---\n',
+    'Library entry': '---\ntitle: "{{title}}"\ntype: literature\nvisibility: private\ncreator: ""\nmedium: book\nsource_url: ""\nconsumption_status: saved\nfinished: ""\ncreated: "{{date}}"\ntopics: []\n---\n',
     'Photo': '---\ntitle: "{{title}}"\ntype: photo\nvisibility: private\ndate: "{{date}}"\n---\n',
 }
 

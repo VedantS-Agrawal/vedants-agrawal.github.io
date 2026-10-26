@@ -1,7 +1,7 @@
 """One scheduled laptop run: COROS sync, then publish if anything public changed."""
 import fcntl, sys
 from common import LOCAL, now, read_json
-import coros_sync, dates, hevy_sync, publisher, weight
+import coros_sync, dates, hevy_sync, publisher, tidy, weight
 
 def run():
     LOCAL.mkdir(parents=True, exist_ok=True)
@@ -13,6 +13,7 @@ def run():
         for step in (hevy_sync.sync, weight.sync):
             try: changed += step()
             except Exception as e: print(now(), f'{step.__module__} failed: {type(e).__name__}', file=sys.stderr)
+        tidy.tidy()
         dates.stamp()
         if not (LOCAL / 'auto-publish-enabled').exists():
             publisher.export()

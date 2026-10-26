@@ -111,7 +111,7 @@ def set_visibility(path, public):
 # -- capture -------------------------------------------------------------------
 FALLBACK = {
     'Free writing': {'title': '{{title}}', 'type': 'writing', 'visibility': 'private', 'created': '{{date}}', 'topics': []},
-    'Literature': {'title': '{{title}}', 'type': 'literature', 'visibility': 'private', 'creator': '', 'medium': 'article',
+    'Library entry': {'title': '{{title}}', 'type': 'literature', 'visibility': 'private', 'creator': '', 'medium': 'article',
                    'source_url': '', 'consumption_status': 'saved', 'finished': '', 'created': '{{date}}', 'topics': []},
     'Photo': {'title': '{{title}}', 'type': 'photo', 'visibility': 'private', 'date': '{{date}}'},
 }
@@ -182,8 +182,9 @@ def capture_source(data):
     parts = urlsplit(url)
     if parts.scheme not in ('http', 'https') or not parts.netloc or len(url) > 1000: raise ValueError('Enter a valid http(s) URL')
     title = clean_title(data.get('title')) or fetch_title(url) or (parts.hostname or '').removeprefix('www.')
-    meta, body = from_template('Literature', title)
-    meta.update(title=title, source_url=url)
+    meta, body = from_template('Library entry', title)
+    meta.update(title=title, source_url=url, consumption_status='saved')   # a saved link isn't being read yet
+    meta.pop('started', None)
     if meta.get('medium') in (None, '', 'book'): meta['medium'] = 'article'
     path = unique('Library', safe_name(title)); write_note(path, meta, body)
     return result(path, meta)

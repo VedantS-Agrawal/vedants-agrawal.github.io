@@ -27,7 +27,7 @@
     [['g', 'a'], 'Go to archive'], [['?'], 'Show this help'], [['Esc'], 'Close']
   ];
   const TYPE_LABEL = {
-    writing: 'Writing', reflection: 'Reflection', photo: 'Photo', literature: 'Library', concept: 'Concept',
+    'literature-note': 'Reading note', writing: 'Writing', reflection: 'Reflection', photo: 'Photo', literature: 'Library', concept: 'Concept',
     evergreen: 'Note', project: 'Project', activity: 'Training', page: 'Page', month: 'Archive', block: 'Training block'
   };
   const MEDIUM_LABEL = { book: 'Book', article: 'Article', film: 'Film', video: 'Video', podcast: 'Podcast', paper: 'Paper' };

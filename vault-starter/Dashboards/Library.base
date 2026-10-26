@@ -1,9 +1,13 @@
 filters:
-  and:
+  or:
     - type == "literature"
+    - type == "literature-note"
 views:
   - type: table
     name: Shelf
+    filters:
+      and:
+        - type == "literature"
     groupBy:
       property: consumption_status
       direction: ASC
@@ -18,7 +22,23 @@ views:
         direction: DESC
   - type: cards
     name: Covers
-    image: note.cover
+    filters:
+      and:
+        - type == "literature"
     order:
       - file.name
       - creator
+    image: note.cover
+  - type: table
+    name: Reading notes
+    filters:
+      and:
+        - type == "literature-note"
+    order:
+      - file.name
+      - about
+      - created
+      - visibility
+    sort:
+      - property: created
+        direction: DESC

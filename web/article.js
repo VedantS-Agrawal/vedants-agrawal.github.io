@@ -60,7 +60,7 @@
      Note metadata strip (type, topics, dates, reading time, copy link / cite)
   ================================================================ */
   const SITE = 'https://vedants-agrawal.github.io';
-  const TYPE_LABEL = { writing: 'Writing', reflection: 'Reflection', photo: 'Photo', literature: 'Library', concept: 'Concept', evergreen: 'Note', project: 'Project', activity: 'Training', page: 'Page', month: 'Archive', block: 'Training block' };
+  const TYPE_LABEL = { 'literature-note': 'Reading note', writing: 'Writing', reflection: 'Reflection', photo: 'Photo', literature: 'Library', concept: 'Concept', evergreen: 'Note', project: 'Project', activity: 'Training', page: 'Page', month: 'Archive', block: 'Training block' };
   const MEDIUM_LABEL = { book: 'Book', article: 'Article', film: 'Film', video: 'Video', podcast: 'Podcast', paper: 'Paper' };
   const normPath = u => { let s = String(u || ''); try { s = decodeURIComponent(s); } catch { /* keep raw */ } return s.replace(/[?#].*$/, '').replace(/\.html$/, '').replace(/\/index$/, '').replace(/\/+$/, '') || '/'; };
   const day = s => (/^\d{4}-\d{2}-\d{2}/.test(String(s || '')) ? String(s).slice(0, 10) : '');

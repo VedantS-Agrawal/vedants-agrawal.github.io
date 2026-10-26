@@ -1,14 +1,13 @@
 ---
 title: "{{title}}"
 type: literature
-visibility: private
 creator: ""
 medium: book
-source_url: ""
-cover: ""
-consumption_status: saved
+consumption_status: reading
+started: "{{date}}"
 finished: ""
-created: "{{date}}"
+cover: ""
 tags: []
+visibility: private
 ---
 

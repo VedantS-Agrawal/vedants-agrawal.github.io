@@ -9,13 +9,13 @@ from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from common import *
-import coros_sync, dates, hevy_sync, weight
+import coros_sync, dates, hevy_sync, tidy, weight
 
 PUBLIC_TYPES = ('activity', 'block', 'month')
 SKIP_FOLDERS = ('_System/', 'Templates/', 'Guide/')
 AUDIO = ('.mp3', '.m4a', '.wav', '.ogg', '.aac')
 IMAGES = ('.jpg', '.jpeg', '.png', '.webp', '.heic')
-PREFIX = {'project': 'projects', 'activity': 'stream/training', 'block': 'training/blocks',
+PREFIX = {'literature-note': 'notes', 'project': 'projects', 'activity': 'stream/training', 'block': 'training/blocks',
           'literature': 'library', 'month': 'archive/notes', 'photo': 'photos', 'page': ''}
 ENTRY_KEYS = ['status', 'medium', 'creator', 'consumption_status', 'finished']
 REPORT = LOCAL / 'last-build.json'
@@ -206,6 +206,10 @@ class Exporter:
     def render(self, n, old, proposal, blocks):
         m = n['meta']; kind = m.get('type', 'writing'); r = self.routes[n['path']]
         body = re.sub(r'%%.*?%%', '', n['body'], flags=re.S)
+        about = str(m.get('about') or '').strip()
+        if about:
+            target = about.strip('"').removeprefix('[[').removesuffix(']]').split('|')[0].strip()
+            if target: body = f'*On [[{target}]]*\n\n' + body
         body = self.rewrite(n, body)
         stamp = now(); digest = fingerprint(n)
         # published: your `published:` property wins; otherwise the first successful publish.
@@ -549,6 +553,7 @@ def finish():
 
 
 def build():
+    tidy.tidy()            # file typed notes out of Inbox/
     dates.stamp()          # fill created / refresh updated in the vault first
     result = export()
     subprocess.run(['node', 'quartz/bootstrap-cli.mjs', 'build', '-d', 'content', '-o', 'dist', '--concurrency', '2'], cwd=ROOT, check=True,

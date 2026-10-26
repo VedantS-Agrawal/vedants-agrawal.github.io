@@ -7,7 +7,7 @@ def setup(target):
     target=target.expanduser().resolve()
     if target.exists() and any(target.iterdir()): raise SystemExit('Target is not empty. Choose a new vault directory.')
     shutil.copytree(ROOT/'vault-starter', target, dirs_exist_ok=True)
-    for name in ['Inbox','Writing','Library','Notes/Concepts','Notes/Evergreen','Reflections','Daily','Photos','Monthly','Notes/Radiology','Training/Activities','Training/Blocks','Media/Photos','Media/Audio','_System','Guide']:
+    for name in ['Inbox','Writing','Library','Notes/Concepts','Notes/Evergreen','Notes/Literature Notes','Reflections','Daily','Photos','Monthly','Notes/Radiology','Training/Activities','Training/Blocks','Media/Photos','Media/Audio','_System','Guide']:
         (target/name).mkdir(parents=True,exist_ok=True)
     projects=[('Pneumonia Image Lab','pneumonia-image-lab','https://vedants-agrawal.github.io/pneumonia-image-lab/',
       'A small convolutional neural network trained on 28 × 28 chest X-rays from PneumoniaMNIST. Explore feature maps, model calculations, test results, and the effect of changing the classification threshold.\n\n[Open the interactive lab](https://vedants-agrawal.github.io/pneumonia-image-lab/) · [Source code](https://github.com/VedantS-Agrawal/pneumonia-image-lab)\n\nThis is an educational benchmark experiment, not a clinically validated diagnostic tool.\n\nRelated: [[CheXNet, explained]]\n'),
