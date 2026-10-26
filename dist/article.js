@@ -47,8 +47,8 @@
 
   /* Interactive reading layer (hover previews, stacked notes, linked-from, sidenotes, focus, graph) */
   {
-    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/notes.css?v=e3721b86f1';
-    const js = document.createElement('script'); js.src = '/notes.js?v=e3721b86f1'; js.defer = true;
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/notes.css?v=e54d8f368e';
+    const js = document.createElement('script'); js.src = '/notes.js?v=e54d8f368e'; js.defer = true;
     document.head.append(css, js);
   }
 
