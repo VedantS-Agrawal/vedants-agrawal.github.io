@@ -1,7 +1,6 @@
 filters:
-  or:
+  and:
     - type == "literature"
-    - type == "literature-note"
 views:
   - type: table
     name: Shelf
@@ -29,16 +28,3 @@ views:
       - file.name
       - creator
     image: note.cover
-  - type: table
-    name: Reading notes
-    filters:
-      and:
-        - type == "literature-note"
-    order:
-      - file.name
-      - about
-      - created
-      - visibility
-    sort:
-      - property: created
-        direction: DESC

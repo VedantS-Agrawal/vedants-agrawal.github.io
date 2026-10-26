@@ -277,6 +277,6 @@ Every field except `date` and `asleepS` is optional. **Privacy:** bedtime, wake 
 
 ## 13. Reading flow and auto-filing
 
-`Library/` holds one `type: literature` entry per work (the facts). `Notes/Literature Notes/` holds `type: literature-note` notes (your thinking), each with `about: "[[Work]]"`; the publisher prepends "*On [[Work]]*" so the work's page gets a backlink. Ideas graduate to `Notes/Concepts/` (`concept`) and `Notes/Evergreen/` (`evergreen`, `maturity: seedling|developing|evergreen`).
+`Library/` holds one `type: literature` entry per work (the facts). `Notes/Literature Notes/` holds `type: literature-note` notes (your thinking), each with `about: "[[Work]]"`; the publisher prepends "*On [[Work]]*" (a one-way link: the work's page does not list notes about it). Ideas graduate to `Notes/Concepts/` (`concept`) and `Notes/Evergreen/` (`evergreen`, `maturity: seedling|developing|evergreen`).
 
 `scripts/tidy.py` runs before every build and sync: notes directly in `Inbox/` with a `type` and untouched for 10 minutes move to that type's folder (`literature`→Library, `literature-note`→Notes/Literature Notes, `concept`→Notes/Concepts, `evergreen`→Notes/Evergreen, `reflection`→Reflections, `writing`→Writing, `photo`→Photos, `daily`→Daily, `month`→Monthly, `block`→Training/Blocks). Publishing state follows the move, so addresses never change.

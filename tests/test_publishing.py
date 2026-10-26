@@ -68,7 +68,8 @@ class PublicationTests(unittest.TestCase):
         body = (self.root / 'content/notes/on-the-stranger.md').read_text()
         self.assertIn('*On [The Stranger](/library/the-stranger)*', body)
         links = json.loads((self.root / 'content/data/links.json').read_text())
-        self.assertEqual(links['backlinks']['/library/the-stranger'][0]['title'], 'On The Stranger')
+        self.assertNotIn('/library/the-stranger', links['backlinks'])        # the book page doesn't list notes about it
+        self.assertNotIn(['/notes/on-the-stranger', '/library/the-stranger'], links['edges'])
 
     def test_started_date_orders_notes(self):
         self.note('Notes/Idea.md', 'x', 'concept', visibility='public', created='2023-02-01')

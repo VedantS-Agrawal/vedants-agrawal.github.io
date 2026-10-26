@@ -2,6 +2,7 @@ filters:
   or:
     - type == "concept"
     - type == "evergreen"
+    - type == "literature-note"
 views:
   - type: table
     name: Ideas
@@ -15,4 +16,17 @@ views:
       - visibility
     sort:
       - property: file.mtime
+        direction: DESC
+  - type: table
+    name: Reading notes
+    filters:
+      and:
+        - type == "literature-note"
+    order:
+      - file.name
+      - about
+      - created
+      - visibility
+    sort:
+      - property: created
         direction: DESC

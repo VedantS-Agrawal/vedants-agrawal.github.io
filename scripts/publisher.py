@@ -491,6 +491,8 @@ def links_of(output):
             for m in link.finditer(para):
                 to = m.group(2)
                 if to not in by_url or to == e['url'] or by_url[to]['type'] == 'activity': continue
+                # Reading notes point at their book, but a book's page stays just the book (one-way by design).
+                if e['type'] == 'literature-note' and by_url[to]['type'] == 'literature': continue
                 edges.add((e['url'], to))
                 # the sentence holding the link, with Markdown stripped and the link text marked
                 start = max(para.rfind('. ', 0, m.start()) + 2, 0) if '. ' in para[:m.start()] else 0
