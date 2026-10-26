@@ -551,6 +551,14 @@ def finish():
     (dest / 'projects').mkdir(exist_ok=True)
     shutil.copy2(ROOT / 'web/projects-redirect.html', dest / 'projects/index.html')  # old /projects/ index → Writing
     (dest / 'projects-redirect.html').unlink(missing_ok=True)
+    # Version our CSS/JS links with a content hash so browsers fetch fresh files after each publish.
+    assets = ['site.css', 'palette.css', 'notes.css', 'app.js', 'article.js', 'palette.js', 'pins.js', 'notes.js']
+    ver = hashlib.sha256(b''.join((dest / a).read_bytes() for a in assets if (dest / a).exists())).hexdigest()[:10]
+    pat = re.compile(r'(["\'])/(' + '|'.join(re.escape(a) for a in assets) + r')(?:\?v=[0-9a-f]+)?(["\'])')
+    for p in [*dest.rglob('*.html'), dest / 'article.js', dest / 'notes.js']:
+        if p.exists():
+            t = p.read_text(); n = pat.sub(lambda m: f'{m.group(1)}/{m.group(2)}?v={ver}{m.group(3)}', t)
+            if n != t: p.write_text(n)
     (dest / '.nojekyll').touch()
 
 
