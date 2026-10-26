@@ -242,7 +242,11 @@ class Exporter:
             blocks.append({'title': n['title'], 'start': str(m.get('start', ''))[:10], 'end': str(m.get('end', ''))[:10], 'url': '/' + r})
         text = re.sub(r'!?\[([^\]]*)\]\([^)]*\)', r'\1', body)
         text = re.sub(r'<[^>]*>|[#*_`>]', '', text).strip()
-        if kind != 'activity': record['summary'] = text.split('\n\n')[0][:240]
+        if kind != 'activity':
+            paras = [q.strip() for q in text.split('\n\n') if q.strip()]
+            if about and paras and paras[0].startswith('On '): paras = paras[1:]   # skip the "On <book>" line
+            # first real paragraph, not a heading line
+            record['summary'] = next((q for q in paras if len(q.split()) > 6), paras[0] if paras else '')[:240]
         record['search'] = text[:5000]
         record['words'] = len(re.findall(r'\w+', text))
         record['tags'] = tags_of(n)

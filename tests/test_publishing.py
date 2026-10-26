@@ -67,6 +67,7 @@ class PublicationTests(unittest.TestCase):
         publisher.export()
         body = (self.root / 'content/notes/on-the-stranger.md').read_text()
         self.assertIn('*On [The Stranger](/library/the-stranger)*', body)
+        self.assertEqual([e for e in self.entries() if e['type'] == 'literature-note'][0]['summary'], 'Disoriented.')
         links = json.loads((self.root / 'content/data/links.json').read_text())
         self.assertNotIn('/library/the-stranger', links['backlinks'])        # the book page doesn't list notes about it
         self.assertNotIn(['/notes/on-the-stranger', '/library/the-stranger'], links['edges'])
