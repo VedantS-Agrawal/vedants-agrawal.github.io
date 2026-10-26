@@ -344,9 +344,9 @@
   /* ================================================================
      Timeline (Stream, Home, Archive)
   ================================================================ */
-  const WRITING = new Set(['writing', 'reflection', 'concept', 'evergreen']);
+  const WRITING = new Set(['writing', 'reflection', 'concept', 'evergreen', 'literature-note']);
   const STREAM_TYPES = new Set([...WRITING, 'photo', 'literature', 'project', 'activity']);
-  const TYPE_LABEL = { writing: 'Writing', reflection: 'Reflection', concept: 'Concept', evergreen: 'Evergreen', photo: 'Photo', literature: 'Library', project: 'Project', activity: 'Training' };
+  const TYPE_LABEL = { 'literature-note': 'Reading note', writing: 'Writing', reflection: 'Reflection', concept: 'Concept', evergreen: 'Evergreen', photo: 'Photo', literature: 'Library', project: 'Project', activity: 'Training' };
   const STATUS_LABEL = { reading: 'Reading', finished: 'Finished', saved: 'Saved', abandoned: 'Set aside' };
   const FILTERS = [['all', 'All'], ['writing', 'Writing'], ['training', 'Training'], ['photos', 'Photos'], ['library', 'Library']];
   const filterOf = e => (e.type === 'activity' ? 'training' : e.type === 'photo' ? 'photos' : e.type === 'literature' || e.type === 'project' ? 'library' : 'writing');
@@ -493,7 +493,7 @@
   /* ================================================================
      Writing index
   ================================================================ */
-  const WRITING_INDEX = new Set(['writing', 'evergreen', 'reflection']);
+  const WRITING_INDEX = new Set(['writing', 'evergreen', 'reflection', 'literature-note']);
   const renderWriting = (data, entries) => {
     setTitle('Writing');
     const items = entries.filter(e => WRITING_INDEX.has(e.type)).sort(byDateDesc);

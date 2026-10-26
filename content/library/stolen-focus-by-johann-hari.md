@@ -1,12 +1,14 @@
 ---
 title: Stolen Focus by Johann Hari
-type: literature
+type: literature-note
 date: '2026-10-26'
 published: '2026-10-26'
 updated: '2026-10-26'
 created: '2026-10-26'
 modified: '2026-10-26'
 ---
+
+*On [Stolen Focus](/library/stolen-focus)*
 
 # Stolen Focus — Johann Hari
 
