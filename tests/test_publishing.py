@@ -55,6 +55,12 @@ class PublicationTests(unittest.TestCase):
         body = (self.root / 'content/notes/a.md').read_text()
         self.assertIn('[train](/stream/training/)', body); self.assertIn('[read](/library/)', body)
 
+    def test_month_only_finish_sorts_late_in_month(self):
+        self.note('Library/Old.md', '', 'literature', visibility='public', consumption_status='finished', finished='2025-02')
+        publisher.export()
+        e = self.entries()[0]
+        self.assertEqual((e['date'], e['datePrecision']), ('2025-02-28', 'month'))
+
     def test_started_date_orders_notes(self):
         self.note('Notes/Idea.md', 'x', 'concept', visibility='public', created='2023-02-01')
         publisher.export()

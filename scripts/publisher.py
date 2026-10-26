@@ -217,6 +217,12 @@ class Exporter:
         if kind not in ('page',): candidates_.append(m.get('created'))
         if kind == 'month' and re.match(r'\d{4}-\d{2}', n['title']): candidates_ = [n['title'][:7]]
         date, precision = next((day_of(c) for c in candidates_ if day_of(c)[0]), (pub[:10], 'day'))
+        if precision == 'month':
+            # A month-only date sorts at the publish day if that's inside the month, else the month's last day,
+            # so a book finished "October" doesn't sink below the whole month in the stream.
+            import calendar
+            y, mo = int(date[:4]), int(date[5:7]); last = f'{date[:7]}-{calendar.monthrange(y, mo)[1]:02d}'
+            date = pub[:10] if pub[:7] == date[:7] else last
         record = {'type': kind, 'title': n['title'], 'url': '/' + r, 'date': date, 'published': pub, 'updated': updated,
                   **({'datePrecision': precision} if precision != 'day' else {}),
                   '_body': body, '_path': n['path']}
