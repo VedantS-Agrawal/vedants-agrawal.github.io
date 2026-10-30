@@ -96,7 +96,12 @@ class BudgetSpent(Exception): pass
 
 # ---------- parsing ----------
 
-def sport_group(t):
+MINDFUL = re.compile(r'meditat|mindful|breath(?:work)?', re.I)
+
+def sport_group(t, *labels):
+    """Sport group for a COROS sport type. Any label (sport name, location/title) that reads as a meditation or breathing
+    session makes it `mindfulness`, whatever the type; plain yoga stays `other`."""
+    if any(MINDFUL.search(str(x or '')) for x in labels): return 'mindfulness'
     if t is None: return 'other'
     t = int(t)
     if t in (100, 101, 102, 103): return 'run'
@@ -304,7 +309,7 @@ def public_of(entry):
     """Build the reviewed public summary from the stored record text plus fetched metrics."""
     rec = parse_chunk(entry['private']['raw'])
     m = (entry.get('detail') or {}).get('metrics') or {}
-    pub = {'id': rec['id'], 'date': rec['date'], 'start': rec['start'], 'sport': rec['sport'], 'group': sport_group(rec['sportType']),
+    pub = {'id': rec['id'], 'date': rec['date'], 'start': rec['start'], 'sport': rec['sport'], 'group': sport_group(rec['sportType'], rec['sport'], rec['location']),
            'durationS': rec['durationS'] or m.get('durationS'), 'distanceKm': rec['distanceKm'] or m.get('distanceKm'),
            'elevGainM': m.get('elevGainM'), 'avgHr': rec['avgHr'] or m.get('avgHr'), 'load': m.get('load'),
            'title': title_of(rec['location'], rec['sport'])}
@@ -353,6 +358,51 @@ def all_entries():
     items = [e for e in items if e.get('public')]
     return sorted(items, key=lambda e: (e['public'].get('start') or 0, e['public']['date']), reverse=True)
 
+
+# ---------- wellness checks around mindfulness sessions ----------
+
+HEALTH_CHECK_CALLS = 6      # MCP calls per run for the optional before/after wellness checks
+CHECK_SETTLE_S = 2 * 3600   # a session is looked up once it has ended this long ago
+
+def parse_health_checks(text):
+    """Wellness checks in a queryHealthCheckTimeSeries result: [{at (unix s), hr, hrv, stress, respiration}, ...].
+    COROS returns data only for deliberate checks, usually none; the layout is read tolerantly (a timestamp plus labelled values per block)
+    and anything that does not parse is skipped."""
+    if not isinstance(text, str) or re.search(r'no (?:complete )?health check', text, re.I): return []
+    tz = ZoneInfo(CONFIG['timezone'])
+    out = []
+    for block in re.split(r'(?m)^(?=\s*(?:\d+\. |--- ))', text):
+        at = None
+        m = re.search(r'(?:start)?[Tt]imestamp=(\d{9,13})', block)
+        if m: at = int(m[1]) // (1000 if len(m[1]) > 10 else 1)
+        else:
+            m = re.search(r'(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})', block)
+            if m: at = int(datetime.fromisoformat(f'{m[1]}T{m[2]}').replace(tzinfo=tz).timestamp())
+        if at is None: continue
+        f = {}
+        for key, pattern in (('hr', r'(?:avg(?:erage)?\.? )?(?:heart rate|hr)\b[^\d\n]{0,12}(\d{2,3})'), ('hrv', r'hrv[^\d\n]{0,12}(\d{1,3})'),
+                             ('stress', r'stress[^\d\n]{0,12}(\d{1,3})'), ('respiration', r'respirat\w*[^\d\n]{0,12}(\d{1,2}(?:\.\d)?)')):
+            v = re.search(pattern, block, re.I)
+            if v and float(v[1]) > 0: f[key] = float(v[1]) if key == 'respiration' else int(v[1])
+        if f: out.append({'at': at, **f})
+    return out
+
+def health_check_pass(today, changed, errors, calls=HEALTH_CHECK_CALLS):
+    """For each mindfulness session not yet looked up, ask once for wellness checks on its date and keep them privately
+    (the publisher publishes a check only when one sits within 30 minutes before and one within 30 minutes after)."""
+    budget = Budget(calls)
+    for entry in all_entries():
+        pub = entry['public']
+        if pub.get('group') != 'mindfulness' or (entry.get('private') or {}).get('healthCheck'): continue
+        end = (pub.get('start') or 0) + (pub.get('durationS') or 0)
+        if not pub.get('start') or time.time() < end + CHECK_SETTLE_S: continue
+        d = pub['date'].replace('-', '')
+        try: checks = parse_health_checks(budget.call('queryHealthCheckTimeSeries', {'startDate': d, 'endDate': d, 'days': 1}))
+        except BudgetSpent: break
+        except Exception as ex: errors.append(f'health check {pub["id"]}: {ex}'[:160]); continue
+        entry['private']['healthCheck'] = {'queried': now(), 'checks': checks}
+        save(pub['id'], entry)
+        if checks: changed.add(pub['id'])
 
 # ---------- detail, laps, FIT ----------
 
@@ -798,6 +848,7 @@ def run(full=False, query=True, detail=None, fit=None, source='COROS MCP'):
         detail_pass(detail, today, changed, errors)
         fit_pass(fit, today, changed, errors)
         changed |= sync_notes(all_entries())
+        if query: health_check_pass(today, changed, errors)
         if query: changed |= wellness_step(full, today, errors, extra)
         refresh_status(source, changed, **extra, lastError=('; '.join(errors[:3]) + (f' (+{len(errors) - 3} more)' if len(errors) > 3 else '')) if errors else None)
     except Exception as ex:

@@ -825,6 +825,8 @@ table.data.ex-table td:first-child, table.data.ex-table th:first-child { white-s
 .sl-signals figcaption span { flex: none; font: 400 11px/1.4 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .sl-note { margin: 12px 0 0; font: 400 12px/1.6 var(--mono); color: var(--muted); }
 .sl-note:empty { display: none; }
+#sl-mind-heads + .chart { margin-top: 20px; }
+.sl-n { color: var(--muted); font: 400 11px/1.4 var(--mono); }
 .sl-card .stages { margin-top: 8px; }
 .sl-card .seg-awake { background: rgba(194, 179, 210, .3); opacity: 1; }
 .sw-dot { display: inline-block; width: 8px; height: 8px; margin-right: 10px; border-radius: 1px; }

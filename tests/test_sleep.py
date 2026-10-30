@@ -109,7 +109,7 @@ class SleepPublishingTests(unittest.TestCase):
     def test_no_sleep_no_file_and_shell_exists(self):
         publisher.export()
         self.assertFalse((self.root / 'content/data/sleep.json').exists())
-        self.assertIn(('stream/sleep', 'Sleep'), publisher.SHELLS)
+        self.assertIn(('stream/sleep', 'Sleep &amp; recovery'), publisher.SHELLS)
         self.assertEqual(publisher.HUBS['sleep'], '/stream/sleep/')
 
 

@@ -20,7 +20,7 @@ PREFIX = {'literature-note': 'notes', 'project': 'projects', 'activity': 'stream
 ENTRY_KEYS = ['status', 'medium', 'creator', 'consumption_status', 'finished']
 REPORT = LOCAL / 'last-build.json'
 HUBS = {'stream': '/stream/', 'writing': '/writing/', 'library': '/library/', 'training': '/stream/training/',
-        'sleep': '/stream/sleep/', 'about': '/about.html', 'colophon': '/colophon.html', 'archive': '/archive/', 'home': '/'}
+        'sleep': '/stream/sleep/', 'recovery': '/stream/sleep/', 'about': '/about.html', 'colophon': '/colophon.html', 'archive': '/archive/', 'home': '/'}
 
 
 class Held(Exception):
@@ -67,6 +67,7 @@ class Exporter:
         self.state = state()
         self.stage = LOCAL / 'export-stage'
         self.media = {}  # vault path -> public url
+        self.training, self.mindful = [], []
         self.files = {p.name: p for p in vault().rglob('*') if p.is_file() and p.suffix.lower() in AUDIO + IMAGES
                       and not any(x.startswith('.') for x in p.relative_to(vault()).parts)}
 
@@ -162,7 +163,9 @@ class Exporter:
         if stored.get('series'): data['series'] = stored['series']
         (self.stage / 'data/activities').mkdir(parents=True, exist_ok=True)
         (self.stage / 'data/activities' / f'{ident}.json').write_text(json.dumps(data, separators=(',', ':')))
-        self.training.append(pub)
+        # Mindfulness sessions keep their pages but stay out of training.json, so training totals and charts stay pure.
+        if pub.get('group') == 'mindfulness': self.mindful.append(mindful_session(pub, stored))
+        else: self.training.append(pub)
         record['activity'] = pub
         record['date'] = pub.get('date', record['date'])
         bits = [pub.get('sport', 'Activity')]
@@ -178,7 +181,7 @@ class Exporter:
         shutil.rmtree(self.stage, ignore_errors=True); self.stage.mkdir(parents=True)
         notes_state = self.state.setdefault('notes', {})
         pool = candidates(self.all)
-        held, output, proposal, self.training, blocks = [], [], {}, [], []
+        held, output, proposal, self.training, self.mindful, blocks = [], [], {}, [], [], []
         # Routes are fixed before rendering so links between public notes resolve.
         self.routes = {n['path']: route(n, notes_state.get(n['path'], {})) for n in pool}
         seen = {}
@@ -187,7 +190,7 @@ class Exporter:
                 held.append({'path': path, 'reason': f'website address /{r} is already used or invalid'}); del self.routes[path]
             seen[r] = path
         for attempt in range(5):
-            output, proposal, self.training, blocks, self.media = [], {}, [], [], {}
+            output, proposal, self.training, self.mindful, blocks, self.media = [], {}, [], [], [], {}
             shutil.rmtree(self.stage, ignore_errors=True); self.stage.mkdir(parents=True)
             newly = []
             for n in [n for n in pool if n['path'] in self.routes]:
@@ -337,6 +340,7 @@ class Exporter:
                     'activities': sorted(self.training, key=lambda a: (a.get('date', ''), a.get('start') or 0), reverse=True)}
         (self.stage / 'data').mkdir(exist_ok=True)
         (self.stage / 'data/training.json').write_text(json.dumps(training, separators=(',', ':'), default=str))
+        if self.mindful: (self.stage / 'data/mindfulness.json').write_text(json.dumps(mindfulness_of(self.mindful), separators=(',', ':')))
         (self.stage / 'data/links.json').write_text(json.dumps(links_of(output), separators=(',', ':'), ensure_ascii=False))
         write_note(self.stage / 'index.md', {'title': CONFIG['name']}, '')
         digest = hashlib.sha256(json.dumps(entries, sort_keys=True, default=str).encode()).hexdigest()
@@ -410,6 +414,35 @@ def sleep_of(days, tags):
         if tags.get(d['date']): o['tags'] = tags[d['date']]
         nights.append(o)
     return nights
+
+
+CHECK_WINDOW_S = 30 * 60   # a wellness check counts as "before" or "after" within half an hour of the session
+
+
+def mindful_session(pub, stored):
+    """One public mindfulness session (docs/Architecture.md §14). Heart rate comes from the stored summary and series;
+    `before` / `after` are wellness-check readings, kept only when one check sits within 30 minutes on each side."""
+    s = {k: pub[k] for k in ('date', 'start', 'durationS', 'avgHr') if pub.get(k) is not None}
+    hr = [v for v in ((stored.get('series') or {}).get('hr') or []) if isinstance(v, (int, float)) and v > 0]
+    if hr: s['minHr'] = round(min(hr))
+    s['title'], s['url'] = pub.get('title') or pub.get('sport') or 'Mindfulness', pub.get('url')
+    checks = ((stored.get('private') or {}).get('healthCheck') or {}).get('checks') or []
+    if pub.get('start') and pub.get('durationS') and checks:
+        start, end = pub['start'], pub['start'] + pub['durationS']
+        before = [c for c in checks if start - CHECK_WINDOW_S <= c.get('at', 0) <= start]
+        after = [c for c in checks if end <= c.get('at', 0) <= end + CHECK_WINDOW_S]
+        if before and after:
+            keep = lambda c: {k: c[k] for k in ('hr', 'hrv', 'stress', 'respiration') if c.get(k) is not None}
+            s['before'], s['after'] = keep(max(before, key=lambda c: c['at'])), keep(min(after, key=lambda c: c['at']))
+    return s
+
+
+def mindfulness_of(sessions):
+    """{sessions (oldest first), days: {date: minutes}} for data/mindfulness.json."""
+    ordered = sorted(sessions, key=lambda s: (s['date'], s.get('start') or 0))
+    seconds = {}
+    for s in ordered: seconds[s['date']] = seconds.get(s['date'], 0) + (s.get('durationS') or 0)
+    return {'sessions': ordered, 'days': {d: max(1, round(v / 60)) for d, v in sorted(seconds.items())}}
 
 
 def strength_of(workouts):
@@ -529,7 +562,7 @@ def export():
     return Exporter().run()
 
 
-SHELLS = [('stream', 'Stream'), ('writing', 'Writing'), ('photos', 'Photos'), ('tags', 'Tags'), ('library', 'Library'), ('archive', 'Archive'), ('stream/training', 'Training history'), ('stream/sleep', 'Sleep')]
+SHELLS = [('stream', 'Stream'), ('writing', 'Writing'), ('photos', 'Photos'), ('tags', 'Tags'), ('library', 'Library'), ('archive', 'Archive'), ('stream/training', 'Training history'), ('stream/sleep', 'Sleep &amp; recovery')]
 
 
 def finish():

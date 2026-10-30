@@ -1,5 +1,5 @@
 /* Public front end: renders /, /stream/, /writing/, /photos/, /tags/ (+ /tags/<tag>/), /stream/training/, /stream/sleep/, /library/ (and /projects/), /archive/ from
-   /site-data.json, /data/training.json and (optionally) /data/wellness.json and /data/sleep.json. Hand-written SVG, no libraries. */
+   /site-data.json, /data/training.json and (optionally) /data/wellness.json, /data/sleep.json and /data/mindfulness.json. Hand-written SVG, no libraries. */
 (() => {
   'use strict';
 
@@ -122,7 +122,7 @@
   const actSort = (a, b) => b.date.localeCompare(a.date) || b.start - a.start;
 
   const cleanEntries = data => (Array.isArray(data.entries) ? data.entries : [])
-    .filter(e => e && e.title && e.url && e.type)
+    .filter(e => e && e.title && e.url && e.type && !(e.type === 'activity' && e.activity && e.activity.group === 'mindfulness'))
     .map(e => {
       const date = String(e.date || e.published || '').slice(0, 10);
       const act = e.type === 'activity' && e.activity ? normAct({ ...e.activity, url: e.url, title: e.title, date: e.activity.date || date }) : null;
@@ -165,14 +165,52 @@
       if (!r.ok) return null;
       const j = await r.json();
       const days = (Array.isArray(j.days) ? j.days : []).filter(d => d && isDay(String(d.date || '').slice(0, 10))).map(normWell)
-        .filter(d => Object.keys(d).length > 1).sort((a, b) => a.date.localeCompare(b.date));
-      return days.length ? { days, map: new Map(days.map(d => [d.date, d])) } : null;
+        .filter(d => Object.keys(d).length > 1);
+      /* minutes of meditation ride along on the day (a practice day without wellness data still gets a line) */
+      await loadMindfulness();
+      const have = new Map(days.map(d => [d.date, d]));
+      mindMap.forEach((m, date) => { const d = have.get(date); if (d) d.mindM = m; else { const o = { date, mindM: m }; days.push(o); have.set(date, o); } });
+      days.sort((a, b) => a.date.localeCompare(b.date));
+      return days.length ? { days, map: have } : null;
     } catch { return null; }
   })());
   /* ---- strength and body-weight trend (optional; a 404 just means "none") ---- */
   const loadOptional = url => (async () => {
     try { const r = await fetch(url, { cache: 'no-cache' }); return r.ok ? await r.json() : null; } catch { return null; }
   })();
+  /* ---- mindfulness (optional /data/mindfulness.json; sessions are kept out of training.json) ---- */
+  const mindMap = new Map();   // date -> minutes, filled by loadMindfulness
+  const normCheck = c => {
+    if (!c || typeof c !== 'object') return null;
+    const o = {};
+    ['hr', 'hrv', 'stress', 'respiration'].forEach(k => { const v = c[k]; if (v != null && v !== '' && Number.isFinite(Number(v))) o[k] = Number(v); });
+    return Object.keys(o).length ? o : null;
+  };
+  let mindPromise;
+  const loadMindfulness = () => (mindPromise ??= loadOptional('/data/mindfulness.json').then(j => {
+    const num = v => (v != null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
+    const sessions = (j && Array.isArray(j.sessions) ? j.sessions : []).filter(x => x && isDay(String(x.date || '').slice(0, 10)) && Number(x.durationS) > 0).map(x => ({
+      date: String(x.date).slice(0, 10), start: Number(x.start) || 0, durationS: Number(x.durationS), avgHr: num(x.avgHr), minHr: num(x.minHr),
+      title: String(x.title || 'Mindfulness'), url: String(x.url || ''), before: normCheck(x.before), after: normCheck(x.after) }))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.start - b.start);
+    const days = new Map();
+    const given = j && j.days && typeof j.days === 'object' ? j.days : {};
+    Object.keys(given).filter(isDay).forEach(d => { const m = Number(given[d]); if (m > 0) days.set(d, m); });
+    if (!days.size) sessions.forEach(x => days.set(x.date, (days.get(x.date) || 0) + Math.max(1, Math.round(x.durationS / 60))));
+    days.forEach((m, d) => mindMap.set(d, m));
+    return sessions.length || days.size ? { sessions, days } : null;
+  }));
+  /* streaks:begin (self-contained so tests can run it under node) */
+  const streaksOf = (days, today) => {
+    const num = s => { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return Math.round(Date.UTC(y, m - 1, d) / 864e5); };
+    const nums = [...new Set(days.map(num))].sort((a, b) => a - b), have = new Set(nums);
+    let longest = 0, run = 0;
+    nums.forEach((n, i) => { run = i && n - nums[i - 1] === 1 ? run + 1 : 1; if (run > longest) longest = run; });
+    let current = 0, n = have.has(num(today)) ? num(today) : num(today) - 1;   // today may simply not have happened yet
+    while (have.has(n)) { current++; n--; }
+    return { current, longest };
+  };
+  /* streaks:end */
   const loadStrength = () => loadOptional('/data/strength.json').then(j => {
     if (!j || !Array.isArray(j.weekly)) return null;
     const weekly = j.weekly.filter(w => w && isDay(w.week)).map(w => ({ week: w.week, volumeLb: Number(w.volumeLb) || 0, sets: Number(w.sets) || 0, sessions: Number(w.sessions) || 0 })).sort((a, b) => a.week.localeCompare(b.week));
@@ -218,6 +256,7 @@
       if (w.steps != null) p.push(`steps ${nf(w.steps, 0)}`);
       if (w.stress != null) p.push(`stress ${nf(w.stress, 0)}`);
     }
+    if (w.mindM > 0) p.push(`mind ${w.mindM < 60 ? `${nf(w.mindM, 0)}m` : fmtSleep(w.mindM * 60)}`);
     return p.join(' · ');
   };
   const STAGES = [['deep', 'Deep', 'deepS'], ['light', 'Light', 'lightS'], ['rem', 'REM', 'remS'], ['awake', 'Awake', 'awakeS']];
@@ -248,6 +287,7 @@
     if (w.acuteLoad != null || w.chronicLoad != null) kv.push(['Load acute / chronic', `${w.acuteLoad != null ? nf(w.acuteLoad, 0) : '–'} / ${w.chronicLoad != null ? nf(w.chronicLoad, 0) : '–'}`]);
     if (w.loadRatio != null) kv.push(['Load ratio', nf(w.loadRatio, 2)]);
     if (w.recoveryPct != null) kv.push(['Recovery', `${nf(w.recoveryPct, 0)}%`]);
+    if (w.mindM > 0) kv.push(['Mindfulness', fmtDur(w.mindM * 60)]);
     if (kv.length) blocks.push(`<dl class="wc-kv">${kv.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`);
     return `<div class="well-card">${blocks.join('')}</div>`;
   };
@@ -432,7 +472,7 @@
       <dl class="week"><div><dt>Time</dt><dd>${esc(fmtDur(cur.s))}<small>avg ${esc(fmtDur(avg.s))}</small></dd></div><div><dt>Distance</dt><dd>${fmtMi(cur.km)} mi<small>avg ${fmtMi(avg.km)}</small></dd></div><div><dt>Sessions</dt><dd>${cur.n}<small>avg ${nf(avg.n, 1)}</small></dd></div></dl>
       <div class="strip"><svg viewBox="0 0 ${7 * cw} ${h + 16}" role="img" aria-label="Daily training time, last 7 days: ${esc(label)}">${hatchDef(hid)}${bars}</svg><p class="cap"><span>${esc(fd(from, 'md'))} – ${esc(fd(end, 'md'))}</span><a href="/stream/training/">History →</a></p></div></section>`;
   };
-  const INTRO_NAV = [['Stream', '/stream/'], ['Writing', '/writing/'], ['Library', '/library/'], ['Photos', '/photos/'], ['Training', '/stream/training/'], ['Sleep', '/stream/sleep/'], ['About', '/about.html']];
+  const INTRO_NAV = [['Stream', '/stream/'], ['Writing', '/writing/'], ['Library', '/library/'], ['Photos', '/photos/'], ['Training', '/stream/training/'], ['Sleep &amp; recovery', '/stream/sleep/'], ['About', '/about.html']];
   const INTRO_MORE = [['Archive', '/archive/'], ['Tags', '/tags/'], ['Colophon', '/colophon.html'], ['RSS', '/index.xml']];
   const introCard = data => {
     /* introHtml is produced by the publisher (p/a/em/strong only); the plain fallback is escaped here */
@@ -473,7 +513,7 @@
         well.days.forEach(w => { if (!have.has(w.date) && wellLine(w)) days.push([w.date, []]); });
         days.sort((a, b) => b[0].localeCompare(a[0]));
       }
-      $('#s-cta').innerHTML = filter === 'training' ? '<div class="train-cta"><a href="/stream/training/">Training history →</a><a href="/stream/sleep/">Sleep →</a></div>' : '';
+      $('#s-cta').innerHTML = filter === 'training' ? '<div class="train-cta"><a href="/stream/training/">Training history →</a><a href="/stream/sleep/">Sleep &amp; recovery →</a></div>' : '';
       $('#s-list').innerHTML = days.length
         ? `${timelineHtml(days.slice(0, limit), { months: true, well: well && well.map, latest: true })}${days.length > limit ? '<p class="more-row"><button type="button" class="btn ghost" id="s-more">Show more</button></p>' : ''}`
         : emptyState('Nothing here yet.');
@@ -922,6 +962,7 @@
       if (w.hrv != null) r.push(['HRV', `${nf(w.hrv, 0)}${w.hrvLow != null && w.hrvHigh != null ? ` (normal ${nf(w.hrvLow, 0)}–${nf(w.hrvHigh, 0)})` : ''}`]);
       if (w.restingHr != null) r.push(['Resting HR', nf(w.restingHr, 0)]);
       if (w.acuteLoad != null || w.chronicLoad != null) r.push(['Load', `${w.acuteLoad != null ? nf(w.acuteLoad, 0) : '–'} acute / ${w.chronicLoad != null ? nf(w.chronicLoad, 0) : '–'} chronic`]);
+      if (w.mindM > 0) r.push(['Mindfulness', fmtDur(w.mindM * 60)]);
       return r;
     };
     const dayCardHtml = d => {
@@ -1684,11 +1725,12 @@
     if (n.restingHr != null) r.push(['Resting HR', nf(n.restingHr, 0)]);
     if (n.napS) r.push(['Nap', `${fmtDur(n.napS)}${n.napT != null ? ` at ${fmtClock(n.napT)}` : ''}`]);
     if (n.tags.length) r.push(['Tags', n.tags.join(', ')]);
+    if (mindMap.get(n.date) > 0) r.push(['Mindfulness', fmtDur(mindMap.get(n.date) * 60)]);
     return r;
   };
   const sleepCardHtml = (date, n) => {
     const head = `<b>${esc(fd(date, 'day'))}</b><span class="dc-y">${esc(date.slice(0, 4))}</span>`;
-    if (!n) return `${head}<p class="dc-n">No sleep data</p>`;
+    if (!n) return `${head}<p class="dc-n">No sleep data</p>${mindMap.get(date) > 0 ? `<dl class="dc-w"><div><dt>Mindfulness</dt><dd>${esc(fmtDur(mindMap.get(date) * 60))}</dd></div></dl>` : ''}`;
     const st = stageParts(n), bar = st.length ? `<div class="stages" aria-hidden="true">${st.map(([k, , v]) => `<span class="seg-${k}" style="flex:${v} 1 0"></span>`).join('')}</div>` : '';
     return `<div class="sl-card">${head}${bar}<dl class="dc-w">${sleepRows(n).map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl></div>`;
   };
@@ -1721,10 +1763,10 @@
   };
 
   const renderSleep = async (data, entries) => {
-    setTitle('Sleep');
-    const [N, t] = await Promise.all([loadSleep(), loadTraining(data, entries)]);
+    setTitle('Sleep & recovery');
+    const [N, t, M, W] = await Promise.all([loadSleep(), loadTraining(data, entries), loadMindfulness(), loadWellness()]);
     const crumb = '<a class="crumb" href="/stream/">← stream</a>';
-    if (!N) { page(head('Sleep', null, data, crumb) + emptyState('No sleep data yet.'), true); return; }
+    if (!N) { page(head('Sleep & recovery', null, data, crumb) + emptyState('No sleep data yet.'), true); return; }
 
     const today = todayStr(), byDate = new Map(N.map(n => [n.date, n]));
     const first = N[0].date, lastNight = N[N.length - 1].date;
@@ -1749,7 +1791,7 @@
     const SIGNALS = [['hrv', 'HRV', 'ms', true], ['sleepHrMin', 'Lowest sleeping HR', 'bpm', false], ['restingHr', 'Resting HR', 'bpm', false], ...(hasResp ? [['respiration', 'Respiration', 'br/min', false]] : [])]
       .filter(([k]) => N.some(n => n[k] != null));
 
-    page(`${head('Sleep', null, data, crumb)}
+    page(`${head('Sleep & recovery', null, data, crumb)}
       <div class="t-period"><span class="seg" id="period-seg" role="group" aria-label="Period">${PERIODS.map(([k, l]) => `<button type="button" data-period="${k}" aria-pressed="${k === S.period}">${l}</button>`).join('')}</span></div>
       <p class="cov">Synced data: ${esc(fd(first))} – ${esc(fd(lastNight))} · ${N.length} ${N.length === 1 ? 'night' : 'nights'}</p>
       <p class="sr-only" id="sl-live" aria-live="polite"></p>
@@ -1766,6 +1808,11 @@
       <section class="t-section" aria-labelledby="sl-h-sig"><header><h2 id="sl-h-sig">Overnight signals</h2><p class="cap" id="sl-sig-cap"></p></header>
         <div class="sl-signals" id="sl-sig">${SIGNALS.map(([k, label], i) => `<figure><figcaption>${esc(label)}<span id="sl-sig-v${i}"></span></figcaption><div class="chart" id="sl-sig${i}" tabindex="0" role="group" aria-label="${esc(label)} per night. Arrow keys move between nights."></div></figure>`).join('') || emptyState('No overnight signals yet.')}</div>
         <div class="legend" id="sl-sig-legend"></div></section>
+      <section class="t-section" aria-labelledby="sl-h-mind"><header><h2 id="sl-h-mind">Mindfulness</h2><p class="cap" id="sl-mind-cap"></p></header>
+        ${M ? `<div id="sl-mind-heads"></div>
+        <div class="chart" id="sl-mind" tabindex="0" role="group" aria-label="Mindfulness minutes. Arrow keys move between days or weeks."></div>
+        <div class="legend" id="sl-mind-legend"></div>
+        <div id="sl-mind-pair"></div><div class="scroll-x" id="sl-mind-ba"></div>` : emptyState('No mindfulness sessions yet \u2014 start a Meditation activity on the watch.')}</section>
       <section class="t-section" aria-labelledby="sl-h-wk"><header><h2 id="sl-h-wk">Weekday vs weekend</h2><p class="cap" id="sl-wk-cap"></p></header>
         <p class="bw-label" id="sl-wk-label"></p><div class="chart" id="sl-wk"></div></section>
       <section class="t-section" aria-labelledby="sl-h-tr"><header><h2 id="sl-h-tr">Sleep &amp; training</h2><p class="cap" id="sl-tr-cap"></p></header>
@@ -1972,6 +2019,83 @@
       return `${s}</svg>`;
     };
 
+    /* ---------- 5b. Mindfulness (data/mindfulness.json): minutes per day or week, streaks, with vs without practice ---------- */
+    const mSessions = M ? M.sessions : [], mDays = M ? M.days : new Map();
+    const mCount = new Map();
+    mSessions.forEach(x => mCount.set(x.date, (mCount.get(x.date) || 0) + 1));
+    const mBuckets = () => {
+      const w = S.win, step = w.daily ? 1 : 7, rows = [];
+      for (let i = 0; i < w.n; i++) {
+        const from = addDays(w.from, i * step), to = w.daily ? from : addDays(from, 6);
+        let v = 0, sessions = 0, days = 0;
+        for (let d = from; d <= to; d = addDays(d, 1)) { const m = mDays.get(d) || 0; v += m; if (m) days++; sessions += mCount.get(d) || 0; }
+        rows.push({ from, to, v, sessions, days });
+      }
+      return { daily: w.daily, unit: step, rows };
+    };
+    const mWin = () => {
+      let minutes = 0, days = 0, sessions = 0;
+      mDays.forEach((m, d) => { if (inWin(d)) { minutes += m; days++; sessions += mCount.get(d) || 0; } });
+      return { minutes, days, sessions };
+    };
+    const drawMindHeads = () => {
+      const o = mWin(), st = streaksOf([...mDays.keys()], today), word = PERIOD_WORD[S.period];
+      const unit = n => `${n} ${n === 1 ? 'day' : 'days'}`;
+      $('#sl-mind-heads').innerHTML = `<dl class="sl-heads">
+        <div><dt>Total time</dt><dd>${o.minutes ? esc(fmtDur(o.minutes * 60)) : '0 min'}<small>${esc(word)}</small></dd></div>
+        <div><dt>Sessions</dt><dd>${o.sessions}<small>${esc(word)}</small></dd></div>
+        <div><dt>Days practiced</dt><dd>${o.days}<small>of ${nDays()}</small></dd></div>
+        <div><dt>Current streak</dt><dd>${esc(unit(st.current))}<small>all time</small></dd></div>
+        <div><dt>Longest streak</dt><dd>${esc(unit(st.longest))}<small>all time</small></dd></div></dl>`;
+    };
+    const drawMind = w => {
+      const B = mBuckets(), total = B.rows.reduce((a, k) => a + k.v, 0);
+      if (!total) return emptyState('No mindfulness sessions in this period.');
+      const left = 40, right = 6, topM = 6, plotH = 120, bottom = 22, H = topM + plotH + bottom, plotW = w - left - right, bw = plotW / B.rows.length;
+      const x = i => left + i * bw;
+      const max = niceCeil(Math.max(...B.rows.map(k => k.v), 10));
+      const y = v => topM + plotH - (v / max) * plotH;
+      let s = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(`Mindfulness minutes per ${B.daily ? 'day' : 'week'}, ${PERIOD_LABEL[S.period].toLowerCase()}, ${nf(total, 0)} minutes in total`)}">`;
+      [0, .5, 1].forEach(f => { s += `<line class="grid" x1="${left}" x2="${w - right}" y1="${y(max * f)}" y2="${y(max * f)}"/><text class="y" x="${left - 6}" y="${y(max * f) + 4}">${nf(max * f, max * f % 1 ? 1 : 0)}</text>`; });
+      const gapPx = bw > 6 ? 2 : bw > 3 ? 1 : .5, curFrom = B.daily ? today : weekStart(today);
+      B.rows.forEach((k, i) => { if (k.v > 0) s += `<rect x="${x(i) + gapPx / 2}" y="${y(k.v)}" width="${Math.max(1, bw - gapPx)}" height="${Math.max(1, topM + plotH - y(k.v))}" fill="${k.from === curFrom ? COL.accent : COL.dim}"/>`; });
+      s += winTicks(S.win.from, S.win.last, d => left + ((dayNum(d) - dayNum(S.win.from)) / B.unit) * bw, H - 6, 54, w - 24);
+      B.rows.forEach((k, i) => {
+        const head2 = B.daily ? fd(k.from, 'day') : `${fd(k.from, 'md')} – ${fd(k.to, 'md')}`;
+        const tip = `<b>${esc(head2)}</b><br>${k.v ? `${nf(k.v, 0)} min · ${k.sessions} ${k.sessions === 1 ? 'session' : 'sessions'}${B.daily ? '' : ` · ${k.days} ${k.days === 1 ? 'day' : 'days'}`}` : 'No sessions'}`;
+        s += `<rect class="hv" x="${x(i)}" y="${topM}" width="${bw}" height="${plotH}" fill="transparent" data-tip="${esc(tip)}"/>`;
+      });
+      return `${s}</svg>`;
+    };
+    /* days with practice vs without: next-night sleep score, next-morning HRV, that day's average stress. Averages only. */
+    const PAIRS = [
+      ['Sleep score the next night', d => { const n = byDate.get(addDays(d, 1)); return n ? n.score : null; }, v => nf(v, 0), 'higher', 'lower'],
+      ['HRV the next morning', d => { const n = byDate.get(addDays(d, 1)); return n ? n.hrv : null; }, v => `${nf(v, 0)} ms`, 'higher', 'lower'],
+      ['Average stress that day', d => { const x = W && W.map.get(d); return x ? x.stress : null; }, v => nf(v, 0), 'lower', 'higher'],
+    ];
+    const drawMindPair = () => {
+      const box = $('#sl-mind-pair'), rows = [];
+      const days = []; for (let d = S.win.from; d <= S.win.last && d < today; d = addDays(d, 1)) days.push(d);
+      PAIRS.forEach(([label, get, f, up, down]) => {
+        const a = [], b = [];
+        days.forEach(d => { const v = get(d); if (v != null && Number.isFinite(v)) (mDays.has(d) ? a : b).push(v); });
+        if (a.length >= 5 && b.length >= 5) rows.push({ label, f, up, down, a: mean(a), b: mean(b), na: a.length, nb: b.length });
+      });
+      if (!rows.length) { box.innerHTML = mWin().days ? '<p class="sl-note">A comparison of days with and without practice appears once there are at least 5 of each.</p>' : ''; return; }
+      const say = r => { const d = r.a - r.b, tiny = Math.abs(d) < (r.label.startsWith('HRV') || r.label.startsWith('Sleep') ? 1 : .5); return `${r.label} ${tiny ? 'tends to be about the same' : `tends to be ${d > 0 ? r.up : r.down}`} on days with practice.`; };
+      box.innerHTML = `<p class="chart-h">With practice vs without</p><div class="scroll-x"><table class="data"><caption class="sr-only">Average on days with mindfulness practice compared with days without, ${esc(PERIOD_LABEL[S.period].toLowerCase())}</caption><thead><tr><th scope="col">Measure</th><th scope="col">With practice</th><th scope="col">Without</th></tr></thead><tbody>${rows.map(r => `<tr><td class="l">${esc(r.label)}</td><td>${esc(r.f(r.a))}<span class="sl-n"> · ${r.na} days</span></td><td>${esc(r.f(r.b))}<span class="sl-n"> · ${r.nb} days</span></td></tr>`).join('')}</tbody></table></div>
+        <p class="sl-note">${esc(rows.map(say).join(' '))} Averages over your own days; other things differ between them too.</p>`;
+    };
+    /* wellness checks taken within half an hour before and after a session */
+    const CHECKS = [['hr', 'HR', v => nf(v, 0)], ['hrv', 'HRV', v => nf(v, 0)], ['stress', 'Stress', v => nf(v, 0)], ['respiration', 'Respiration', v => nf(v, 1)]];
+    const drawMindChecks = () => {
+      const box = $('#sl-mind-ba'), ss = mSessions.filter(x => x.before && x.after && inWin(x.date)).reverse();
+      if (!ss.length) { box.innerHTML = ''; return; }
+      const cols = CHECKS.filter(([k]) => ss.some(x => x.before[k] != null && x.after[k] != null));
+      if (!cols.length) { box.innerHTML = ''; return; }
+      box.innerHTML = `<p class="chart-h">Before and after</p><table class="data"><caption class="sr-only">Wellness check taken before and after each session</caption><thead><tr><th scope="col">Session</th>${cols.map(c => `<th scope="col">${c[1]}</th>`).join('')}</tr></thead><tbody>${ss.map(x => `<tr><td class="l">${x.url ? `<a href="${urlHref(x.url)}">${esc(fd(x.date, 'md'))}</a>` : esc(fd(x.date, 'md'))}<span class="sl-n"> · ${esc(fmtDur(x.durationS))}</span></td>${cols.map(([k, , f]) => `<td>${x.before[k] != null && x.after[k] != null ? `${f(x.before[k])} → ${f(x.after[k])}` : '—'}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    };
+
     /* ---------- 6. Weekday vs weekend (a night is dated by the evening it began: Fri and Sat evenings are weekend nights) ---------- */
     const isWeekend = date => { const dow = new Date((dayNum(date) - 1) * 864e5).getUTCDay(); return dow === 5 || dow === 6; };
     const groupStats = ns => ({ n: ns.length, bed: mean(ns.map(x => x.bedT)), wake: mean(ns.map(x => x.wakeT)), mid: mean(ns.map(x => (x.bedT + x.wakeT) / 2)), dur: mean(ns.map(x => x.asleepS)) });
@@ -2086,15 +2210,17 @@
     const run = {
       sched: mount($('#sl-sched'), drawSched), bal: mount($('#sl-bal'), drawBal), stg: mount($('#sl-stg'), drawStages), wk: mount($('#sl-wk'), drawWk),
       tr: mount($('#sl-tr'), drawTrain), rib: mount($('#sl-rib'), drawRib),
+      ...(M ? { mind: mount($('#sl-mind'), drawMind) } : {}),
       sig: SIGNALS.map(([k, , , band], i) => mount($(`#sl-sig${i}`), drawSignal(k, i === SIGNALS.length - 1, band))),
     };
-    [$('#sl-bal'), $('#sl-stg'), $('#sl-wk'), $('#sl-tr'), ...SIGNALS.map((_, i) => $(`#sl-sig${i}`))].forEach(bindTip);
+    [$('#sl-bal'), $('#sl-stg'), $('#sl-wk'), $('#sl-tr'), $('#sl-mind'), ...SIGNALS.map((_, i) => $(`#sl-sig${i}`))].filter(Boolean).forEach(bindTip);
     [$('#sl-sched'), $('#sl-rib')].forEach(bindCards);
     kbTour($('#sl-sched'), 'rect.hv[data-date]', tourShow);
     kbTour($('#sl-rib'), 'rect.day[data-has]', tourShow);
     kbTour($('#sl-bal'), 'rect.hv[data-tip]', tourShow);
     kbTour($('#sl-stg'), 'rect.hv[data-tip]', tourShow);
     kbTour($('#sl-tr'), 'circle.pt', tourShow);
+    kbTour($('#sl-mind'), 'rect.hv[data-tip]', tourShow);
     SIGNALS.forEach((_, i) => kbTour($(`#sl-sig${i}`), 'rect.hv[data-tip]', tourShow));
 
     const refresh = () => {
@@ -2128,6 +2254,12 @@
       $('#sl-rib-cap').textContent = `One cell per night, coloured by time asleep`;
       $('#sl-rib-legend').innerHTML = ns.length ? '<span><i class="sw scale-sl"></i>Less → more sleep</span><span><i class="sw hatch"></i>Not synced</span>' : '';
       drawTags();
+      if (M) {
+        const o = mWin();
+        $('#sl-mind-cap').textContent = `${lbl} · ${o.minutes ? fmtDur(o.minutes * 60) : 'no sessions'} ${o.sessions ? `in ${o.sessions} ${o.sessions === 1 ? 'session' : 'sessions'}` : ''}`.trim();
+        drawMindHeads(); drawMindPair(); drawMindChecks();
+        $('#sl-mind-legend').innerHTML = o.minutes ? `<span><i class="sw bar"></i>${S.win.daily ? 'Day' : 'Week'}</span><span><i class="sw dot"></i>${S.win.daily ? 'Today' : 'This week'}</span>` : '';
+      } else $('#sl-mind-cap').textContent = '';
       Object.values(run).flat().forEach(f => f());
     };
     const syncUrl = () => {
